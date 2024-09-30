@@ -1,0 +1,40 @@
+# Template file for PLUMED: Opes-flooding for N2 / FeCo
+
+#RESTART
+
+UNITS LENGTH=A
+
+### GROUPS
+
+N1:   GROUP ATOMS=___N1-ATOM___
+N2:   GROUP ATOMS=___N2-ATOM___
+N:    GROUP ATOMS=___N-ATOMS___
+Fe:   GROUP ATOMS=___Fe-ATOMS___
+Co:   GROUP ATOMS=___Co-ATOMS___
+FeCo: GROUP ATOMS=___FeCo-ATOMS___
+
+### COLLECTIVE VARIABLES
+
+# Coordination Numbers
+coord_N-Fe:   COORDINATION GROUPA=N GROUPB=Fe   D_0=1.0 R_0=1.5
+coord_N-Co:   COORDINATION GROUPA=N GROUPB=Co   D_0=1.0 R_0=1.5
+coord_N-FeCo: COORDINATION GROUPA=N GROUPB=FeCo D_0=1.0 R_0=1.5
+
+# Distance between N-N
+d_N-N: DISTANCE ATOMS=N1,N2
+
+# Define excluded_region
+exclude: CUSTOM ARG=d_N-N FUNC=step(x-1.5) PERIODIC=NO
+
+### BIAS 
+
+# Opes 
+bias: OPES_METAD ARG=d_N-N,c_N-Fe BARRIER=50 TEMP=___TEMP___ PACE=50 EXCLUDED_REGION=exclude RESTART=___RESTART_MODE___
+
+# Harmonic lower wall to prevent N2 desorption 
+lwall: LOWER_WALLS ARG=c_N-Fe AT=0.2 KAPPA=10000. EXP=2
+
+### STOP the simulation when the system reaches the products state
+COMMITTOR ARG=d_N-N STRIDE=1 BASIN_LL1=2.5 BASIN_UL1=10 
+
+PRINT ARG=* STRIDE=100 FILE=COLVAR
