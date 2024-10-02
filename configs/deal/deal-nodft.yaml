@@ -1,0 +1,64 @@
+# Super cell 
+supercell: 
+    file: traj-selection.xyz                                                    # Starting configuration
+    format: extxyz
+    index: 0
+
+# FLARE calculator with (sparse) Gaussian process
+flare_calc:
+    gp: SGP_Wrapper
+    kernels:
+        - name: NormalizedDotProduct                                            # select kernel for comparison of atomic environments
+          sigma: 2                                                              # signal variance, this hyperparameter will be trained, and is typically between 1 and 10.
+          power: 2                                                              # power of the kernel, influences body-order
+    descriptors:
+        - name: B2                                                              # Atomic Cluster Expansion (ACE) descriptor from R. Drautz (2019). FLARE can only go from B1 up to B3 currently.
+          nmax: 8                                                               # Radial fidelity of the descriptor (higher value = higher cost)
+          lmax: 3                                                               # Angular fidelity of the descriptor (higher value = higher cost)
+          cutoff_function: quadratic                                            # Cutoff behavior
+          radial_basis: chebyshev                                               # Formalism for the radial basis functions
+          cutoff_matrix: [[4,4,4,4],[4,4,4,4],[4,4,5.5,5.5],[4,4,5.5,5.5]]      # In angstroms. NxN array for N_species in a system. the order of the matrix corresponds to the list of chemical species (e.g., matrix element 1,1 is the cutoff for element 1 interacting with itself) 
+    energy_noise: 0.1                                                           # Energy noise hyperparameter, will be trained later. Typically set to 1 meV * N_atoms.
+    forces_noise: 0.05                                                          # Force noise hyperparameter, will be trained later. System dependent, typically between 0.05 meV/A and 0.2 meV/A.
+    stress_noise: 0.001                                                         # Stress noise hyperparameter, will be trained later. Typically set to 0.001 meV/A^3.
+    species:                                                                    # Atomic number of your species (here, 13 = Al). To add additional species, insert a new line below this one in the same format (e.g., - A#), where A# is the atomic number of the second species.
+        - 1
+        - 7                                                                     
+        - 26
+        - 27
+    single_atom_energies:                                                       # Single atom energies to bias the energy prediction of the model. Can help in systems with poor initial energy estimations. Length must equal the number of species.
+        - 0                                                                 
+        - 0
+        - 0
+        - 0
+    cutoff: 5.5
+    variance_type: local                                                        # Calculate atomic uncertainties.
+    max_iterations: 20                                                          # Maximum steps taken during each hyperparameter optimization call. Can sometimes be helpful to increase this value if hyperparameter optimization is unstable.
+    use_mapping: False   
+
+dft_calc:
+    name: FakeDFT                                                               # Fake DFT (just uses the energy from extxyz) 
+    kwargs: {}
+    params: {}
+
+# On-the-fly selection 
+otf:  
+    mode: fresh                                                                 
+    md_engine: Fake                                                             # Do not perform MD, just read frames sequentially
+    md_kwargs: 
+        filenames: [ traj-selection.xyz ]
+        format: extxyz
+        index: ":"
+        io_kwargs: {}
+    initial_velocity: file                                                      # Initialize the velocities (units of Kelvin)
+    dt: 0.001                                                                   # This value is arbitrary in this setting
+    number_of_steps: 1000000                                                    # Total number of MD steps to be taken. Set to a value greater than the number of your DFT frames
+    output_name: deal                                                           # output name
+    init_atoms: [-1,-2]                                                         # init atoms from first frame to add to sparse set
+    std_tolerance_factor: -0.1                                                  # The uncertainty threshold above which the DFT will be called. This value is typically scaled with the number of species (e.g., -0.05 for 2 species, -0.1 for 3, etc.)
+    max_atoms_added: -1                                                         # Allow for all atoms in a given frame to be added to the sparse set if uncertainties permit              
+    train_hyps: [10,20]                                                         # Define range in which hyperparameters will be optimized. Here, hyps are optimized at every DFT call after the 5th call.
+    write_model: 1                                                              # Verbosity of model output.
+    update_style: threshold                                                     # Sparse set update style. Atoms above a defined "threshold" will be added using this method
+    update_threshold: 0.05                                                      # Threshold for adding atoms if "update_style = threshold". Threshold represents relative uncertainty to mean atomic uncertainty, where atoms above are added to sparse set. This value is typically set to be 0.1*std_tolerance_factor.
+    force_only: False 

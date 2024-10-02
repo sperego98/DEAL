@@ -1,0 +1,3 @@
+* deal: pretrain / nodft
+* Change DEAL Results for threshold=0.8
+* remove header OMP
