@@ -116,8 +116,7 @@ def create_deal_input(trajectory,
                       threshold=0.1,
                       update_threshold=0.05,
                       cutoff=5.,
-                      atomic_numbers=None,
-                      pretrain=None):
+                      atomic_numbers=None):
     """
     Create input files for DEAL.
 
@@ -128,7 +127,7 @@ def create_deal_input(trajectory,
     folder : str, optional (default='./deal/')
         Folder where the input files will be created
     config_path : str, optional (default='./configs/deal.yaml')
-        Path of the configs file 
+        Path of the default configs file
     threshold : float, optional (default=0.1)
         Uncertainty threshold for selecting the configuration (whenever the GP uncertainty on one of the local environments is >= threshold the configuration will be added to the GP)
     update_threshold : float, optional (default=0.05)
@@ -137,8 +136,6 @@ def create_deal_input(trajectory,
         Cutoff for the descriptors. Can be a single value or a dictionary where the keys are tuples of atomic numbers
     atomic_numbers : list of int, optional
         List of atomic numbers to consider. If None, it will be extracted from the trajectory
-    pretrain: str, optional
-        Path of the pre-trained model. If None, a new GP will be trained with the given cutoff
 
     Returns
     -------
@@ -183,14 +180,11 @@ def create_deal_input(trajectory,
     config[section]['file'] = filename
 
     section = 'flare_calc'
-    if pretrain is not None:
-        config[section]['file'] = pretrain
-    else:
-        config[section]['species'] = [int(i) for i in atomic_numbers]
-        config[section]['single_atom_energies'] = [0 for _ in atomic_numbers]
-        config[section]['descriptors'][0]['cutoff_matrix'] = cutoff_matrix
-        config[section]['descriptors'][0]['cutoff_function'] = 'quadratic'
-        config[section]['cutoff'] = max_cutoff
+    config[section]['species'] = [int(i) for i in atomic_numbers]
+    config[section]['single_atom_energies'] = [0 for _ in atomic_numbers]
+    config[section]['descriptors'][0]['cutoff_matrix'] = cutoff_matrix
+    config[section]['descriptors'][0]['cutoff_function'] = 'quadratic'
+    config[section]['cutoff'] = max_cutoff
 
     section = 'otf'
     config[section]['md_kwargs']['filenames'] = [ filename ]
