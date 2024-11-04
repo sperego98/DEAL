@@ -1,5 +1,6 @@
 import numpy as np
 import yaml
+import os
 from ase import Atoms
 from ase.io import read,write
 from pathlib import Path
@@ -117,7 +118,8 @@ def create_deal_input(trajectory,
                       update_threshold=0.05,
                       cutoff=5.,
                       atomic_numbers=None,
-                      pretrain=None):
+                      pretrain=None,
+                      copy_traj=True):
     """
     Create input files for DEAL.
 
@@ -137,8 +139,10 @@ def create_deal_input(trajectory,
         Cutoff for the descriptors. Can be a single value or a dictionary where the keys are tuples of atomic numbers
     atomic_numbers : list of int, optional
         List of atomic numbers to consider. If None, it will be extracted from the trajectory
-    pretrain: str, optional
+    pretrain : str, optional
         Path of the pre-trained model. If None, a new GP will be trained with the given cutoff
+    copy_traj : bool, optional
+        If True, copy the trajectory to the folder. If False, only the path will be modified in the input file. Considered only if trajectory is a path to an xyz file
 
     Returns
     -------
@@ -151,12 +155,21 @@ def create_deal_input(trajectory,
     if isinstance(trajectory,list) & isinstance(trajectory[0],Atoms):
         filename = 'traj-selection.xyz'
         traj = trajectory
-    # elif is a path, check that exists and copy it inside folder
-    elif isinstance(traj,str):
-        filename = trajectory.split('/')[-1]
+        write(folder+filename,traj)
+    # elif is a path, check that exists and copy eventually  it inside folder
+    elif isinstance(trajectory,str):
         traj = read(trajectory,index=':')
-    # write to xyz
-    write(folder+filename,traj)
+        # check if the trajectory is in xyz format
+        if os.path.splitext(trajectory)[-1] != '.xyz':
+            copy_traj = True
+        if copy_traj:
+            # write to xyz
+            filename = os.path.basename(trajectory)
+            write(folder+filename,traj)
+        elif not copy_traj:
+            # check if trajectory is absolute path if not make it relative to folder
+            if not os.path.isabs(trajectory):
+                filename = os.path.relpath(trajectory, folder)
 
     # get species
     if atomic_numbers is None:
