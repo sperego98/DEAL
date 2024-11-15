@@ -117,6 +117,7 @@ def create_deal_input(trajectory,
                       threshold=0.1,
                       update_threshold=0.05,
                       cutoff=5.,
+                      cutoff_function='quadratic',
                       atomic_numbers=None,
                       pretrain=None,
                       copy_traj=True):
@@ -137,6 +138,8 @@ def create_deal_input(trajectory,
         When a new configuration is found, all local environments with threshold >= update_threshold will be added to the GP
     cutoff : float or dict, optional (default=5.)
         Cutoff for the descriptors. Can be a single value or a dictionary where the keys are tuples of atomic numbers
+    cutoff_function : str, optional (default='quadratic')
+        Cutoff function for the descriptors (quadratic, cosine, etc.)
     atomic_numbers : list of int, optional
         List of atomic numbers to consider. If None, it will be extracted from the trajectory
     pretrain : str, optional
@@ -173,7 +176,9 @@ def create_deal_input(trajectory,
 
     # get species
     if atomic_numbers is None:
-        atomic_numbers = sorted(list(set(traj[0].get_atomic_numbers())))
+        # get atomic numbers from the full trajectory
+        atomic_numbers = [set(atoms.get_atomic_numbers()) for atoms in traj]
+        atomic_numbers = sorted(list(set().union(*atomic_numbers)))
 
     # build cutoff matrix 
     if isinstance(cutoff,dict):
@@ -202,7 +207,7 @@ def create_deal_input(trajectory,
         config[section]['species'] = [int(i) for i in atomic_numbers]
         config[section]['single_atom_energies'] = [0 for _ in atomic_numbers]
         config[section]['descriptors'][0]['cutoff_matrix'] = cutoff_matrix
-        config[section]['descriptors'][0]['cutoff_function'] = 'quadratic'
+        config[section]['descriptors'][0]['cutoff_function'] = cutoff_function
         config[section]['cutoff'] = max_cutoff
 
     section = 'otf'

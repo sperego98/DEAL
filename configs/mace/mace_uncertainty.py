@@ -1,8 +1,9 @@
 from ase.io import read,write
 from mace.calculators import MACECalculator
-from tqdm import tqdm 
+from tqdm import tqdm
 import numpy as np
-from copy import deepcopy
+from copy import copy
+import torch
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -34,7 +35,7 @@ print(f"TYPE   | model loaded ({calc})")
 # EVALUATE
 for atoms in tqdm(traj):
     calc.calculate(atoms)
-    atoms.calc = deepcopy(calc)
+    atoms.calc = copy(calc)
 
     if calc.num_models>1:
         # |mean| and std forces over commitee
