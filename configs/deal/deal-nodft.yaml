@@ -58,7 +58,7 @@ otf:
     std_tolerance_factor: -0.1                                                  # The uncertainty threshold above which the DFT will be called. This value is typically scaled with the number of species (e.g., -0.05 for 2 species, -0.1 for 3, etc.)
     max_atoms_added: -1                                                         # Allow for all atoms in a given frame to be added to the sparse set if uncertainties permit              
     train_hyps: [10,20]                                                         # Define range in which hyperparameters will be optimized. Here, hyps are optimized at every DFT call after the 5th call.
-    write_model: 1                                                              # Verbosity of model output.
+    write_model: 3                                                              # Verbosity of model output.
     update_style: threshold                                                     # Sparse set update style. Atoms above a defined "threshold" will be added using this method
     update_threshold: 0.05                                                      # Threshold for adding atoms if "update_style = threshold". Threshold represents relative uncertainty to mean atomic uncertainty, where atoms above are added to sparse set. This value is typically set to be 0.1*std_tolerance_factor.
     force_only: False 

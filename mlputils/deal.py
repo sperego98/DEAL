@@ -1,5 +1,6 @@
 import numpy as np
 import yaml
+import os
 from ase import Atoms
 from ase.io import read,write
 from pathlib import Path
@@ -116,8 +117,10 @@ def create_deal_input(trajectory,
                       threshold=0.1,
                       update_threshold=0.05,
                       cutoff=5.,
+                      cutoff_function='quadratic',
                       atomic_numbers=None,
-                      pretrain=None):
+                      pretrain=None,
+                      copy_traj=True):
     """
     Create input files for DEAL.
 
@@ -135,10 +138,14 @@ def create_deal_input(trajectory,
         When a new configuration is found, all local environments with threshold >= update_threshold will be added to the GP
     cutoff : float or dict, optional (default=5.)
         Cutoff for the descriptors. Can be a single value or a dictionary where the keys are tuples of atomic numbers
+    cutoff_function : str, optional (default='quadratic')
+        Cutoff function for the descriptors (quadratic, cosine, etc.)
     atomic_numbers : list of int, optional
         List of atomic numbers to consider. If None, it will be extracted from the trajectory
-    pretrain: str, optional
+    pretrain : str, optional
         Path of the pre-trained model. If None, a new GP will be trained with the given cutoff
+    copy_traj : bool, optional
+        If True, copy the trajectory to the folder. If False, only the path will be modified in the input file. Considered only if trajectory is a path to an xyz file
 
     Returns
     -------
@@ -151,16 +158,27 @@ def create_deal_input(trajectory,
     if isinstance(trajectory,list) & isinstance(trajectory[0],Atoms):
         filename = 'traj-selection.xyz'
         traj = trajectory
-    # elif is a path, check that exists and copy it inside folder
-    elif isinstance(traj,str):
-        filename = trajectory.split('/')[-1]
+        write(folder+filename,traj)
+    # elif is a path, check that exists and copy eventually  it inside folder
+    elif isinstance(trajectory,str):
         traj = read(trajectory,index=':')
-    # write to xyz
-    write(folder+filename,traj)
+        # check if the trajectory is in xyz format
+        if os.path.splitext(trajectory)[-1] != '.xyz':
+            copy_traj = True
+        if copy_traj:
+            # write to xyz
+            filename = os.path.basename(trajectory)
+            write(folder+filename,traj)
+        elif not copy_traj:
+            # check if trajectory is absolute path if not make it relative to folder
+            if not os.path.isabs(trajectory):
+                filename = os.path.relpath(trajectory, folder)
 
     # get species
     if atomic_numbers is None:
-        atomic_numbers = sorted(list(set(traj[0].get_atomic_numbers())))
+        # get atomic numbers from the full trajectory
+        atomic_numbers = [set(atoms.get_atomic_numbers()) for atoms in traj]
+        atomic_numbers = sorted(list(set().union(*atomic_numbers)))
 
     # build cutoff matrix 
     if isinstance(cutoff,dict):
@@ -189,7 +207,7 @@ def create_deal_input(trajectory,
         config[section]['species'] = [int(i) for i in atomic_numbers]
         config[section]['single_atom_energies'] = [0 for _ in atomic_numbers]
         config[section]['descriptors'][0]['cutoff_matrix'] = cutoff_matrix
-        config[section]['descriptors'][0]['cutoff_function'] = 'quadratic'
+        config[section]['descriptors'][0]['cutoff_function'] = cutoff_function
         config[section]['cutoff'] = max_cutoff
 
     section = 'otf'
