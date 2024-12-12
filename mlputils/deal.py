@@ -70,7 +70,7 @@ def filter_by_cv(traj,cv,bins,max_samples_per_bin=1000, verbose=True):
 
     return [traj[i] for i in indexes]
 
-def sort_traj(traj,mode,seed=None, uncertainty=None):
+def sort_traj(traj,mode,seed=None, uncertainty=None,return_idx=False):
     """
     Sort the trajectory `traj` according to `mode`.
 
@@ -87,19 +87,19 @@ def sort_traj(traj,mode,seed=None, uncertainty=None):
         Random seed for shuffling. Only used if mode='random'
     uncertainty : array_like, optional
         Uncertainty for each frame in `traj`. Only used if mode='uncertainty'
+    return_idx : bool, optional
+        If True, return the index of the sorted trajectory. Default is False
 
     Returns
     -------
     sorted_traj : list
         Sorted list of atoms objects
     """
-    if mode == None:
-        return traj
+    idx = np.arange(len(traj))
     
     if mode == "shuffle":
         if seed is not None:
             np.random.seed(seed)
-        idx = np.arange(len(traj))
         np.random.shuffle(idx)
 
     elif mode == "uncertainty":
@@ -109,7 +109,10 @@ def sort_traj(traj,mode,seed=None, uncertainty=None):
     
     traj = [traj[i] for i in idx]
 
-    return traj
+    if return_idx:
+        return traj, idx
+    else:
+        return traj
 
 def create_deal_input(trajectory,
                       folder='./deal/',
