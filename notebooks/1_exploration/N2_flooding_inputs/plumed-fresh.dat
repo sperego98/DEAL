@@ -29,10 +29,10 @@ exclude: CUSTOM ARG=d_N-N FUNC=step(x-1.5) PERIODIC=NO
 ### BIAS 
 
 # Opes 
-bias: OPES_METAD ARG=d_N-N,c_N-Fe BARRIER=50 TEMP=700 PACE=50 EXCLUDED_REGION=exclude RESTART=YES
+bias: OPES_METAD ARG=d_N-N,coord_N-Fe BARRIER=50 TEMP=700 PACE=50 EXCLUDED_REGION=exclude RESTART=YES
 
 # Harmonic lower wall to prevent N2 desorption 
-lwall: LOWER_WALLS ARG=c_N-Fe AT=0.2 KAPPA=10000. EXP=2
+lwall: LOWER_WALLS ARG=coord_N-Fe AT=0.2 KAPPA=10000. EXP=2
 
 ### STOP the simulation when the system reaches the products state
 COMMITTOR ARG=d_N-N STRIDE=1 BASIN_LL1=2.5 BASIN_UL1=10 

@@ -46,7 +46,7 @@ restart		100 lmp.restart lmp2.restart
 reset_timestep	0
 velocity	free create ${temp} ${seed} dist gaussian
 velocity	fixed create ${temp} ${seed} dist gaussian
-fix		    fix_plumed all plumed plumedfile ../plumed.dat outfile log.plumed
+fix		    fix_plumed all plumed plumedfile plumed.dat outfile log.plumed
 fix		    fix_nve free nve
 fix		    fix_temp free temp/csvr ${temp} ${temp} 0.1 ${seed}
 fix		    fix_wall all wall/reflect zhi ${wall} 

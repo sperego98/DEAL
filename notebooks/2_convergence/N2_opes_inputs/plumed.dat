@@ -24,10 +24,10 @@ d_N-N: DISTANCE ATOMS=N1,N2
 ### BIAS 
 
 # Opes 
-bias: OPES_METAD ARG=d_N-N,c_N-Fe BARRIER=200 TEMP=700 PACE=200 RESTART=YES
+bias: OPES_METAD ARG=d_N-N,coord_N-Fe BARRIER=200 TEMP=700 PACE=200 RESTART=YES
 
 # Harmonic walls (to facilitate reversible transitions and prevent N atoms to go far away)
 lwall: LOWER_WALLS ARG=d_N-N AT=1.2 KAPPA=5000. EXP=2
-lwall: UPPER_WALLS ARG=d_N-N AT=3.2 KAPPA=5000. EXP=2
+uwall: UPPER_WALLS ARG=d_N-N AT=3.2 KAPPA=5000. EXP=2
 
 PRINT ARG=* STRIDE=100 FILE=COLVAR
