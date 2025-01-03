@@ -2,7 +2,7 @@
 
 This repository contains the code needed to reproduce the workflow presented in:
 
-S. Perego and L. Bonati, _Data-efficient modeling of catalytic reactions via enhanced sampling and on-the-fly learning of machine learning potentials_, ChemRxiv, doi:[10.26434/chemrxiv-2024-nsp7n](https://doi.org/10.26434/chemrxiv-2024-nsp7n)
+Perego S. and Bonati L., "Data efficient machine learning potentials for modeling catalytic reactivity via active learning and enhanced sampling", _npj Computational Materials_ 10, 291 (2024), doi:[10.26434/chemrxiv-2024-nsp7n](https://doi.org/10.1038/s41524-024-01481-6)
 
 > [!NOTE]  
 > We are preparing tutorials to illustrate more generally the different steps of our protocol (including DEAL) beyond the specific examples addressed in the manuscript (which require, e.g., running Quantum Espresso). If you are interested, turn on notifications! 
