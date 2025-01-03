@@ -1,4 +1,4 @@
-# Data-efficient modeling of catalytic reactions via enhanced sampling and on-the-fly learning of machine learning potentials
+# Data efficient machine learning potentials for modeling catalytic reactivity via active learning and enhanced sampling
 
 This repository contains the code needed to reproduce the workflow presented in:
 
