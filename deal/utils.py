@@ -149,17 +149,25 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
         print('[INFO] COLVAR info saved in trajectory.')
 
     # Get CV names
-    prop_names = []
+    prop_names, prop_names_float = [],[]
     for c in cvs:
         if '*' in c:
-            prop_names.extend([p for p in atoms.info.keys() if c.replace('*','') in p])
+            prop_names.extend([p for p in atoms.info.keys() if c.replace('*','') in p ])
         else:
             prop_names.append(c)
 
-    print('[INFO] CV names:',prop_names)
+    # Check if CV names can be converted to float
+    for p in prop_names:
+        try:
+            float(atoms.info[p])
+            prop_names_float.append(p)
+        except TypeError:
+            print(f'skipping "{p}" as it cannot be converted to float.')
+
+    print('[INFO] CV names:',prop_names_float)
 
     # Extract properties
-    properties = chemiscope.extract_properties(traj, only=prop_names)
+    properties = chemiscope.extract_properties(traj, only=prop_names_float)
 
     # Define shape and colors
     shapes_selection = []
