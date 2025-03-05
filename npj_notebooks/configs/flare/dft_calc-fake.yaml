@@ -1,0 +1,5 @@
+# Do not perform any DFT
+dft_calc:
+    name: FakeDFT                                                               # We are going to perform "FakeDFT" since our extxyz input already contains the DFT labels
+    kwargs: {}
+    params: {}
