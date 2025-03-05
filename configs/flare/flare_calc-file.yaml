@@ -1,4 +1,0 @@
-# Load SGP Calculator from file
-flare_calc:
-    gp: SGP_Wrapper
-    file: otf_flare.json

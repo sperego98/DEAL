@@ -1,6 +1,0 @@
-# Super cell 
-supercell: 
-    file: input.xyz                                                             # Starting configuration
-    format: extxyz
-    index: 0
-
