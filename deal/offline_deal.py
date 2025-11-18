@@ -27,6 +27,7 @@ class DataConfig:
     files: List[str]
     format: Optional[str] = None
     index: str = ":"                 # ASE selection string
+    colvar: Optional[List[str]] = None
     # TODO ADD SHUFFLE
 
 @dataclass
@@ -236,6 +237,7 @@ class DEAL:
                 create_chemiscope_input(
                     trajectory=out_xyz,
                     filename=f"{self.deal_cfg.output_prefix}_chemiscope.json.gz",
+                    colvar=self.data_cfg.colvar[0], # TODO support multiple colvars
                     verbose=self.deal_cfg.verbose
                 )
             except Exception as exc:
