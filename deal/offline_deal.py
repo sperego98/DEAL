@@ -236,15 +236,23 @@ class DEAL:
                 create_chemiscope_input(
                     trajectory=out_xyz,
                     filename=f"{self.deal_cfg.output_prefix}_chemiscope.json.gz",
+                    verbose=self.deal_cfg.verbose
                 )
             except Exception as exc:
-                print(f"[DEAL] Could not write chemiscope file: {exc}")
+                print(f"[ERROR] Could not write chemiscope file: {exc}")
 
         # Save final SGP model
         self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
+        
+        if self.deal_cfg.verbose:
+            print(f"""[INFO] Created files:
+- SELECTED:   {self.deal_cfg.output_prefix}_selected.xyz
+- GP_MODEL:   {self.deal_cfg.output_prefix}_flare.json
+- CHEMISCOPE: {self.deal_cfg.output_prefix}_chemiscope.json.gz
+                  """)
 
     # ------------------------------------------------------------------
-    # bookkeeping & GP update (ported from OTF_DEAL.update_gp)
+    # bookkeeping & GP update
     # ------------------------------------------------------------------
 
     def _store_selected_frame(self, step: int, ase_frame, target_atoms: Sequence[int]):
@@ -397,7 +405,7 @@ def main() -> None:
     if isinstance(deal_cfg.threshold, list):
         prefix = deal_cfg.output_prefix
         for threshold in deal_cfg.threshold:
-            print('[INFO] Running DEAL with threshold', threshold)
+            print('[DEAL] Running with threshold:', threshold)
             deal_cfg.threshold = threshold
             deal_cfg.output_prefix = f"{prefix}_{str(threshold).replace('-','')}"
             DEAL(data_cfg, deal_cfg, flare_cfg).run()

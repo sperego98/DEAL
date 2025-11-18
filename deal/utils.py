@@ -98,7 +98,7 @@ for i in range(len(paletteFessa)):
 ### For standard plots
 # plt.plot(x, y, color='fessa0')
 
-def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*']):
+def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'], verbose=False):
     """
     Create a chemiscope input file from a trajectory and optional collective variables (colvar) file.
 
@@ -112,14 +112,16 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
         Path of the COLVAR file or a pandas dataframe
     cvs : list of str, optional
         List of collective variable names to be saved into the chemiscope file. If a string contains '*', it will be used as a filter for the property names in the colvar file (e.g. 'cv.*' will extract all properties with 'cv.' prefix). Default is ['*']
-
+    verbose: bool, optional
+        Print information
     Returns
     -------
     filename : str
         Path of the chemiscope input file
     """
 
-    print('[INFO] Creating Chemiscope input file...')
+    if verbose:
+        print('[INFO] Creating Chemiscope input file...')
     try: 
         import chemiscope
     except ImportError:
@@ -129,7 +131,8 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
     if isinstance(trajectory,list) & isinstance(trajectory[0],Atoms):
         traj = trajectory
     elif isinstance(trajectory,str):
-        print('[INFO] Reading file:',trajectory)
+        if verbose:
+            print('[INFO] Reading file:',trajectory)
         traj = read(trajectory,index=':')
     atoms = traj[0]
 
@@ -147,7 +150,8 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
             for col in colvar.columns:
                 atoms.info['colvar.'+col] = colvar[col].iloc[i]
 
-        print('[INFO] COLVAR info saved in trajectory.')
+        if verbose:
+            print('[INFO] COLVAR info saved in trajectory.')
 
     # Get CV names
     prop_names, prop_names_float = [],[]
@@ -163,9 +167,11 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
             float(atoms.info[p])
             prop_names_float.append(p)
         except TypeError:
-            print(f'skipping "{p}" as it cannot be converted to float.')
+            if p != "target_atoms":
+                print(f'skipping "{p}" as it cannot be converted to float.')
 
-    print('[INFO] CV names:',prop_names_float)
+    if verbose:
+        print('[INFO] CV names:',prop_names_float)
 
     # Extract properties
     properties = chemiscope.extract_properties(traj, only=prop_names_float)
@@ -181,7 +187,7 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
                 shapes_selection.append({"radius": CR[CS.index(atom.symbol)], "color": None if i in target_atoms else '#d4d4d4' })
             else:
                 shapes_selection.append({"radius": CR[CS.index(atom.symbol)], "color": None })
-    if target_atoms is not None:
+    if target_atoms is not None and verbose:
         print('[INFO] "target_atoms" found in atoms.')
 
     # Write input
@@ -212,6 +218,6 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
                 }
     )
 
-    print('[INFO] Chemiscope input saved in:',filename)
+    if verbose: print('[INFO] Chemiscope input saved in:',filename)
 
     return filename
