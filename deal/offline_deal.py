@@ -4,22 +4,21 @@ from dataclasses import dataclass,field,asdict
 from typing import List, Optional, Sequence
 from typing import List, Dict, Any
 
+import numpy as np
+import argparse
+import sys
+import yaml
+from pprint import pformat
+import json
 from copy import deepcopy
 
-import numpy as np
 from ase.io import iread, write
 from ase.calculators.singlepoint import SinglePointCalculator
 
 from flare.learners.utils import is_std_in_bound
 from flare.atoms import FLARE_Atoms
 
-from deal import get_sgp_calc
 from utils import create_chemiscope_input
-
-import argparse
-import sys
-import yaml
-from pprint import pformat
 
 @dataclass
 class DataConfig:
@@ -28,7 +27,6 @@ class DataConfig:
     format: Optional[str] = None
     index: str = ":"                 # ASE selection string
     colvar: Optional[List[str]] = None
-    # TODO ADD SHUFFLE
 
 @dataclass
 class DEALConfig:
@@ -111,7 +109,7 @@ class DEAL:
             print('')
 
         # Build SGP calculator using your existing helper
-        self.flare_calc, self.kernels = get_sgp_calc(asdict(self.flare_cfg))
+        self.flare_calc, self.kernels = self._get_sgp_calc(asdict(self.flare_cfg))
         self.gp = self.flare_calc.gp_model
 
         # Default update_threshold if not set
@@ -200,11 +198,11 @@ class DEAL:
             _ = atoms.get_forces()   # triggers GP eval and stores stds internally
 
             std_in_bound, target_atoms = is_std_in_bound(
-                self.deal_cfg.threshold,
+                self.deal_cfg.threshold * -1, # threshold = - std_tolerance_factor
                 self.gp.force_noise,
                 atoms,
                 max_atoms_added=self.deal_cfg.max_atoms_added,
-                update_style="add_n",
+                update_style="threshold",
                 update_threshold=self.deal_cfg.update_threshold,
             )
 
@@ -237,7 +235,7 @@ class DEAL:
                 create_chemiscope_input(
                     trajectory=out_xyz,
                     filename=f"{self.deal_cfg.output_prefix}_chemiscope.json.gz",
-                    colvar=self.data_cfg.colvar[0], # TODO support multiple colvars
+                    colvar=self.data_cfg.colvar, 
                     verbose=self.deal_cfg.verbose
                 )
             except Exception as exc:
@@ -254,8 +252,136 @@ class DEAL:
                   """)
 
     # ------------------------------------------------------------------
-    # bookkeeping & GP update
+    # GP creation and update
     # ------------------------------------------------------------------
+
+    def _get_sgp_calc(self, flare_config):
+        """
+        Return a SGP_Calculator with sgp from SparseGP
+        source: https://github.com/mir-group/flare/blob/master/flare/scripts/otf_train.py
+        """
+        from flare.bffs.sgp._C_flare import NormalizedDotProduct, SquaredExponential
+        from flare.bffs.sgp._C_flare import B2, B3, TwoBody, ThreeBody, FourBody
+        from flare.bffs.sgp import SGP_Wrapper
+        from flare.bffs.sgp.calculator import SGP_Calculator
+
+        sgp_file = flare_config.get("file", None)
+
+        # Load sparse GP from file
+        if sgp_file is not None:
+            with open(sgp_file, "r") as f:
+                gp_dct = json.loads(f.readline())
+                if gp_dct.get("class", None) == "SGP_Calculator":
+                    flare_calc, kernels = SGP_Calculator.from_file(sgp_file)
+                else:
+                    sgp, kernels = SGP_Wrapper.from_file(sgp_file)
+                    flare_calc = SGP_Calculator(sgp)
+            return flare_calc, kernels
+
+        kernels = flare_config.get("kernels")
+        opt_algorithm = flare_config.get("opt_algorithm", "BFGS")
+        max_iterations = flare_config.get("max_iterations", 20)
+        bounds = flare_config.get("bounds", None)
+        use_mapping = flare_config.get("use_mapping", False)
+
+        # Define kernels.
+        kernels = []
+        for k in flare_config["kernels"]:
+            if k["name"] == "NormalizedDotProduct":
+                kernels.append(NormalizedDotProduct(k["sigma"], k["power"]))
+            elif k["name"] == "SquaredExponential":
+                kernels.append(SquaredExponential(k["sigma"], k["ls"]))
+            else:
+                raise NotImplementedError(f"{k['name']} kernel is not implemented")
+
+        # Define descriptor calculators.
+        n_species = len(flare_config["species"])
+        cutoff = flare_config["cutoff"]
+        descriptors = []
+        for d in flare_config["descriptors"]:
+            if "cutoff_matrix" in d:  # multiple cutoffs
+                assert np.allclose(np.array(d["cutoff_matrix"]).shape, (n_species, n_species)),\
+                    "cutoff_matrix needs to be of shape (n_species, n_species)"
+
+            if d["name"] == "B2":
+                radial_hyps = [0.0, cutoff]
+                cutoff_hyps = []
+                descriptor_settings = [n_species, d["nmax"], d["lmax"]]
+                if "cutoff_matrix" in d:  # multiple cutoffs
+                    desc_calc = B2(
+                        d["radial_basis"],
+                        d["cutoff_function"],
+                        radial_hyps,
+                        cutoff_hyps,
+                        descriptor_settings,
+                        d["cutoff_matrix"],
+                    )
+                else:
+                    desc_calc = B2(
+                        d["radial_basis"],
+                        d["cutoff_function"],
+                        radial_hyps,
+                        cutoff_hyps,
+                        descriptor_settings,
+                    )
+
+            elif d["name"] == "B3":
+                radial_hyps = [0.0, cutoff]
+                cutoff_hyps = []
+                descriptor_settings = [n_species, d["nmax"], d["lmax"]]
+                desc_calc = B3(
+                    d["radial_basis"],
+                    d["cutoff_function"],
+                    radial_hyps,
+                    cutoff_hyps,
+                    descriptor_settings,
+                )
+
+            elif d["name"] == "TwoBody":
+                desc_calc = TwoBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+
+            elif d["name"] == "ThreeBody":
+                desc_calc = ThreeBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+
+            elif d["name"] == "FourBody":
+                desc_calc = FourBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+
+            else:
+                raise NotImplementedError(f"{d['name']} descriptor is not supported")
+
+            descriptors.append(desc_calc)
+
+        # Define remaining parameters for the SGP wrapper.
+        species_map = {flare_config.get("species")[i]: i for i in range(n_species)}
+        sae_dct = flare_config.get("single_atom_energies", None)
+        if sae_dct is not None:
+            assert n_species == len(
+                sae_dct
+            ), "'single_atom_energies' should be the same length as 'species'"
+            single_atom_energies = {i: sae_dct[i] for i in range(n_species)}
+        else:
+            single_atom_energies = {i: 0 for i in range(n_species)}
+
+        sgp = SGP_Wrapper(
+            kernels=kernels,
+            descriptor_calculators=descriptors,
+            cutoff=cutoff,
+            sigma_e=flare_config.get("energy_noise",0.1),
+            sigma_f=flare_config.get("forces_noise",0.05),
+            sigma_s=flare_config.get("stress_noise",0.1),
+            species_map=species_map,
+            variance_type=flare_config.get("variance_type", "local"),
+            single_atom_energies=single_atom_energies,
+            energy_training=flare_config.get("energy_training", True),
+            force_training=flare_config.get("force_training", True),
+            stress_training=flare_config.get("stress_training", True),
+            max_iterations=max_iterations,
+            opt_method=opt_algorithm,
+            bounds=bounds,
+        )
+
+        flare_calc = SGP_Calculator(sgp, use_mapping)
+        return flare_calc, kernels
 
     def _store_selected_frame(self, step: int, ase_frame, target_atoms: Sequence[int]):
         """Keep a copy of the selected ASE frame for writing to XYZ."""
@@ -277,7 +403,7 @@ class DEAL:
         Update the SGP using DFT forces (and optionally energies/stress)
         on the current FLARE_Atoms structure.
 
-        This mirrors your original OTF_DEAL.update_gp, but without
+        This mirrors original update gp from FLARE OTF, but without
         wall-time logging or mapping.
         """
         # Convert stress into FLARE convention if present
@@ -319,7 +445,7 @@ class DEAL:
 
         struc_to_add.calc = SinglePointCalculator(struc_to_add, **sp_results)
 
-        # Update GP database (this is where FLARE C++ gets called)
+        # Update GP database 
         self.gp.update_db(
             struc_to_add,
             dft_frcs,
@@ -409,7 +535,7 @@ def main() -> None:
         for threshold in deal_cfg.threshold:
             print('[DEAL] Running with threshold:', threshold)
             deal_cfg.threshold = threshold
-            deal_cfg.output_prefix = f"{prefix}_{str(threshold).replace('-','')}"
+            deal_cfg.output_prefix = f"{prefix}_{str(threshold)}"
             DEAL(data_cfg, deal_cfg, flare_cfg).run()
     else:
         DEAL(data_cfg, deal_cfg, flare_cfg).run()
