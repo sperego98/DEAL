@@ -119,6 +119,7 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
         Path of the chemiscope input file
     """
 
+    print('[INFO] Creating Chemiscope input file...')
     try: 
         import chemiscope
     except ImportError:
