@@ -230,6 +230,7 @@ class DEAL:
         if self.selected_frames:
             out_xyz = f"{self.deal_cfg.output_prefix}_selected.xyz"
             write(out_xyz, self.selected_frames)
+            chem_input=False
             try:
                 create_chemiscope_input(
                     trajectory=out_xyz,
@@ -237,18 +238,19 @@ class DEAL:
                     colvar=self.data_cfg.colvar, 
                     verbose=self.deal_cfg.verbose
                 )
+                chem_input=True
             except Exception as exc:
                 print(f"[ERROR] Could not write chemiscope file: {exc}")
 
-        # Save final SGP model
-        self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
-        
-        if self.deal_cfg.verbose:
-            print(f"""[INFO] Created files:
+            # Save final SGP model
+            self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
+            
+            if self.deal_cfg.verbose:
+                print(f"""\n[INFO] Created files:
 - SELECTED:   {self.deal_cfg.output_prefix}_selected.xyz
-- GP_MODEL:   {self.deal_cfg.output_prefix}_flare.json
-- CHEMISCOPE: {self.deal_cfg.output_prefix}_chemiscope.json.gz
-                  """)
+- GP_MODEL:   {self.deal_cfg.output_prefix}_flare.json""")
+                if chem_input:
+                    print(f"- CHEMISCOPE: {self.deal_cfg.output_prefix}_chemiscope.json.gz\n")
 
     # ------------------------------------------------------------------
     # GP creation and update
