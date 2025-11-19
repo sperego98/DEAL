@@ -244,7 +244,6 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
 
     # load colvar file into traj if requested
     if colvar is not None:
-        print(colvar)
         if isinstance(colvar,pd.DataFrame):
             pass
         else:

@@ -95,6 +95,10 @@ class DEAL:
         self.deal_cfg = deal_cfg
         self.flare_cfg = flare_cfg
 
+        # Check if a single traj or a list is provided
+        if isinstance(self.data_cfg.files, str):
+            self.data_cfg.files = [self.data_cfg.files]
+
         # Automatically detect species if not specified
         if self.flare_cfg.species is None:
             self.flare_cfg.species = self._get_species()
@@ -135,7 +139,6 @@ class DEAL:
         Detect species automatically using the DataConfig instance.
         Reads only the first frame from the first file.
         """
-
         for fname in self.data_cfg.files:
             for atoms in iread(fname, index=self.data_cfg.index, format=self.data_cfg.format):
                 return sorted(set(atoms.get_atomic_numbers().tolist()))
@@ -164,7 +167,6 @@ class DEAL:
         msg = f"[DEAL] Examined: {step+1} | Selected: {self.dft_count}"
         sys.stdout.write("\r" + msg)
         sys.stdout.flush()
-
 
     # ------------------------------------------------------------------
     # main loop
