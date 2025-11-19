@@ -29,6 +29,30 @@ def compute_histogram(value, bins, threshold = None):
     
 import pandas as pd 
 
+################################################################
+## Functions to load COLVAR files 
+## source: https://mlcolvar.readthedocs.io/en/stable/_modules/mlcolvar/utils/io.html
+################################################################
+
+def is_plumed_file(filename):
+    """
+    Check if given file is in PLUMED format.
+
+    Parameters
+    ----------
+    filename : string, optional
+        PLUMED output file
+
+    Returns
+    -------
+    bool
+        wheter is a plumed output file
+    """
+    headers = pd.read_csv(filename, sep=" ", skipinitialspace=True, nrows=0)
+    is_plumed = True if " ".join(headers.columns[:2]) == "#! FIELDS" else False
+    return is_plumed
+
+
 def plumed_to_pandas(filename="./COLVAR"):
     """
     Load a PLUMED file and save it to a dataframe.
@@ -58,6 +82,84 @@ def plumed_to_pandas(filename="./COLVAR"):
         names=headers,
         comment="#",
     )
+
+    return df
+
+def load_dataframe(
+    file_names, start=0, stop=None, stride=1, delete_download=True, **kwargs
+):
+    """Load dataframe(s) from file(s). It can be used also to open files from internet (if the string contains http).
+    In case of PLUMED colvar files automatically handles the column names, otherwise it is just a wrapper for pd.load_csv function.
+
+    Parameters
+    ----------
+    filenames : str or list[str]
+        filenames to be loaded
+    start: int, optional
+        read from this row, default 0
+    stop: int, optional
+        read until this row, default None
+    stride: int, optional
+        read every this number, default 1
+    delete_download: bool, optinal
+        whether to delete the downloaded file after it has been loaded, default True.
+    kwargs:
+        keyword arguments passed to pd.load_csv function
+
+    Returns
+    -------
+    pandas.DataFrame
+        Dataframe
+
+    Raises
+    ------
+    TypeError
+        if data is not a valid type
+    """
+
+    # if it is a single string
+    if type(file_names) == str:
+        file_names = [file_names]
+    elif type(file_names) != list:
+        raise TypeError(
+            f"only strings or list of strings are supported, not {type(file_names)}."
+        )
+
+    # list of file_names
+    df_list = []
+    for i, filename in enumerate(file_names):
+        # check if filename is an url
+        download = False
+        if "http" in filename:
+            download = True
+            url = filename
+            filename = "tmp_" + filename.split("/")[-1]
+            urllib.request.urlretrieve(url, filename)
+
+        # check if file is in PLUMED format
+        if is_plumed_file(filename):
+            df_tmp = plumed_to_pandas(filename)
+            df_tmp["walker"] = [i for _ in range(len(df_tmp))]
+            df_tmp = df_tmp.iloc[start:stop:stride, :]
+            df_list.append(df_tmp)
+
+        # else use read_csv with optional kwargs
+        else:
+            df_tmp = pd.read_csv(filename, **kwargs)
+            df_tmp["walker"] = [i for _ in range(len(df_tmp))]
+            df_tmp = df_tmp.iloc[start:stop:stride, :]
+            df_list.append(df_tmp)
+
+        # delete temporary data if necessary
+        if download:
+            if delete_download:
+                os.remove(filename)
+            else:
+                print(f"downloaded file ({url}) saved as ({filename}).")
+
+        # concatenate
+        df = pd.concat(df_list)
+        df.reset_index(drop=True, inplace=True)
 
     return df
     
@@ -97,6 +199,10 @@ for i in range(len(paletteFessa)):
 # plt.contourf(X, Y, Z, cmap='fessa')
 ### For standard plots
 # plt.plot(x, y, color='fessa0')
+
+##########################################################################
+## CHEMISCOPE
+##########################################################################
 
 def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'], verbose=False):
     """
@@ -138,12 +244,14 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
 
     # load colvar file into traj if requested
     if colvar is not None:
-        if isinstance(colvar,str):
-            colvar = plumed_to_pandas(colvar)
-        elif isinstance(colvar,pd.DataFrame):
+        print(colvar)
+        if isinstance(colvar,pd.DataFrame):
             pass
         else:
-            raise TypeError("colvar must be a string filename or a pandas dataframe")
+            try:
+                colvar = load_dataframe(colvar)
+            except Exception as e:
+                print (f"[WARNING]: colvar file: {colvar} not read, it should be a string filename or a pandas dataframe")
         
         # Check if colvar and trajectory have the same number of frames
         if len(colvar) == len(traj):
