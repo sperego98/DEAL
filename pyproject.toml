@@ -1,7 +1,7 @@
 [project]
 name = "deal"
+version = "0.1.0"
 description = "Data Efficient Active Learning"
-dynamic = ["version"]
 readme = "README.md"
 authors = [
     { name = "Luigi Bonati" , email = "luigi.bonati@iit.it"},
