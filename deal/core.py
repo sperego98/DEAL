@@ -41,6 +41,7 @@ class DEALConfig:
     # --- output ---
     output_prefix: str = "deal"
     verbose: bool = False
+    save_gp: bool = False
 
 @dataclass
 class FlareConfig:
@@ -222,7 +223,7 @@ class DEAL:
             self._print_progress(step)
 
         # newline so terminal prompt doesn't collide with progress line
-        print('\n')
+        print('')
 
         # ------------------------------------------------------------------
         # outputs
@@ -230,7 +231,8 @@ class DEAL:
         if self.selected_frames:
             out_xyz = f"{self.deal_cfg.output_prefix}_selected.xyz"
             write(out_xyz, self.selected_frames)
-            chem_input=False
+            if self.deal_cfg.verbose:
+                print(f"[OUTPUT] Saved selected frames to: {out_xyz}\n")
             try:
                 create_chemiscope_input(
                     trajectory=out_xyz,
@@ -238,19 +240,15 @@ class DEAL:
                     colvar=self.data_cfg.colvar, 
                     verbose=self.deal_cfg.verbose
                 )
-                chem_input=True
             except Exception as exc:
-                print(f"[ERROR] Could not write chemiscope file: {exc}")
+                print(f"[WARNING] Could not write chemiscope file: {exc}")
 
-            # Save final SGP model
-            self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
+            if self.deal_cfg.save_gp:
+                # Save final SGP model
+                self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
+                if self.deal_cfg.verbose:
+                    print(f"[OUTPUT] Saved GP model to {self.deal_cfg.output_prefix}_flare.json")
             
-            if self.deal_cfg.verbose:
-                print(f"""\n[INFO] Created files:
-- SELECTED:   {self.deal_cfg.output_prefix}_selected.xyz
-- GP_MODEL:   {self.deal_cfg.output_prefix}_flare.json""")
-                if chem_input:
-                    print(f"- CHEMISCOPE: {self.deal_cfg.output_prefix}_chemiscope.json.gz\n")
 
     # ------------------------------------------------------------------
     # GP creation and update
@@ -388,6 +386,7 @@ class DEAL:
         """Keep a copy of the selected ASE frame for writing to XYZ."""
         sel = ase_frame.copy()
         sel.info["step"] = step
+        sel.info["frame"] = step # TODO change if data is shuffled
         sel.info["target_atoms"] = np.array(target_atoms, dtype=int)
         self.selected_frames.append(sel)
         self.dft_count += 1

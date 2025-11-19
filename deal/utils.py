@@ -248,21 +248,22 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
         else:
             try:
                 colvar = load_dataframe(colvar)
+
+                # Check if colvar and trajectory have the same number of frames
+                if len(colvar) == len(traj):
+                    for i,atoms in enumerate(traj):
+                        for col in colvar.columns:
+                            atoms.info['colvar.'+col] = colvar[col].iloc[i]
+
+                else: # check if atoms.info has a step field and retrieve the colvar from that step
+                    for i,atoms in enumerate(traj):
+                        if 'step' in atoms.info:
+                            for col in colvar.columns:
+                                atoms.info['colvar.'+col] = colvar[col].loc[atoms.info['step']]
+
             except Exception as e:
-                print (f"[WARNING]: colvar file: {colvar} not read, it should be a string filename or a pandas dataframe")
+                print (f"[WARNING]: colvar file: {colvar} not read, it should be a string filename or a pandas dataframe. Exception: {e}.")
         
-        # Check if colvar and trajectory have the same number of frames
-        if len(colvar) == len(traj):
-            for i,atoms in enumerate(traj):
-                for col in colvar.columns:
-                    atoms.info['colvar.'+col] = colvar[col].iloc[i]
-
-        else: # check if atoms.info has a step field and retrieve the colvar from that step
-            for i,atoms in enumerate(traj):
-                if 'step' in atoms.info:
-                    for col in colvar.columns:
-                        atoms.info['colvar.'+col] = colvar[col].loc[atoms.info['step']]
-
     # Get CV names
     prop_names, prop_names_float = [],[]
     for c in cvs:
@@ -328,6 +329,6 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
                 }
     )
 
-    if verbose: print('[INFO] Chemiscope input saved in:',filename)
+    if verbose: print('[OUTPUT] Chemiscope input saved in:',filename)
 
     return filename
