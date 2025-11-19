@@ -3,6 +3,7 @@ from ase.data import covalent_radii as CR
 from ase.data import chemical_symbols as CS
 from ase.io import read
 from ase import Atoms
+import pandas as pd 
 
 import os
 
@@ -26,8 +27,6 @@ def compute_histogram(value, bins, threshold = None):
         return x,(h1,h2)
     else:
         return x,h1
-    
-import pandas as pd 
 
 ################################################################
 ## Functions to load COLVAR files 

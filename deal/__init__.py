@@ -1,2 +1,2 @@
-from .input import *
+from .deal import *
 from .utils import *

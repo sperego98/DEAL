@@ -1,335 +1,547 @@
-"""
-Run DEAL on a trajectory. Code adapted from flare: https://github.com/mir-group/flare/blob/master/flare/scripts/otf_train.py
-"""
+from __future__ import annotations
 
-import time, os, shutil, glob, subprocess, sys, json
-from copy import deepcopy
-import inspect
+from dataclasses import dataclass,field,asdict
+from typing import List, Optional, Sequence
+from typing import List, Dict, Any
+
 import numpy as np
-
-from otf import OTF_DEAL
-from fake import FakeDFT
-
-from ase import units
-import ase.calculators as ase_calculators
-from ase.md.velocitydistribution import (
-    MaxwellBoltzmannDistribution,
-    Stationary,
-    ZeroRotation,
-)
-from ase import io
-from ase.symbols import symbols2numbers
-
+import argparse
+import sys
 import yaml
+from pprint import pformat
+import json
+from copy import deepcopy
 
+from ase.io import iread, write
+from ase.calculators.singlepoint import SinglePointCalculator
 
-def get_super_cell(atoms_config):
+from flare.learners.utils import is_std_in_bound
+from flare.atoms import FLARE_Atoms
+
+from utils import create_chemiscope_input
+
+@dataclass
+class DataConfig:
+    # --- data / trajectory ---
+    files: List[str]
+    format: Optional[str] = None
+    index: str = ":"                 # ASE selection string
+    colvar: Optional[List[str]] = None
+
+@dataclass
+class DEALConfig:
+    # --- selection parameters ---
+    threshold: float = 1.0
+    update_threshold: Optional[float] = None
+    max_atoms_added: int = -1
+    min_steps_with_model: int = 0     # frames between two selections
+
+    # --- GP training options ---
+    force_only: bool = True           # ignore energies/stress if True
+    train_hyps: bool = False          # train hyperparams after each update
+
+    # --- output ---
+    output_prefix: str = "deal"
+    verbose: bool = False
+
+@dataclass
+class FlareConfig:
+    # --- gp ---
+    gp: str = "SGP_Wrapper"
+
+    # --- kernel ---
+    kernels: List[Dict[str, Any]] = field(default_factory=lambda: [
+        {"name": "NormalizedDotProduct", "sigma": 2.0, "power": 2}
+    ])
+    # --- descriptor ---
+    descriptors: List[Dict[str, Any]] = field(default_factory=lambda: [
+        {
+            "name": "B2",
+            "nmax": 8,
+            "lmax": 3,
+            "cutoff_function": "cosine",
+            "radial_basis": "chebyshev",
+        }
+    ])
+    # --- species ---
+    species: list[int] = None 
+    # --- parameters ---
+    cutoff: float = 4.5
+    variance_type: str = "local"
+    max_iterations: int = 20
+
+class DEAL:
     """
-    Set up Supercell from ASE Atoms
+    Minimal DEAL-style selector:
+
+    - iterate over a trajectory (ASE files)
+    - for each frame:
+        * read energy/forces/stress from the file
+        * evaluate SGP and its uncertainties
+        * if uncertainty is above threshold -> "select" frame and update SGP
+
+    Outputs:
+        <output_prefix>_selected.xyz
+        <output_prefix>_flare.json
+        <output_prefix>_chemiscope.json.gz
     """
-    # parse parameters
-    atoms_file = atoms_config.get("file")
-    atoms_format = atoms_config.get("format", None)
-    atoms_index = atoms_config.get("index", 0)
-    replicate = atoms_config.get("replicate", [1, 1, 1])
-    jitter = atoms_config.get("jitter", 0)
 
-    if atoms_format is not None:
-        super_cell = io.read(atoms_file, format=atoms_format, index=atoms_index)
-    else:
-        super_cell = io.read(atoms_file, index=atoms_index)
-    super_cell *= replicate
+    def __init__(self, 
+                 data_cfg: DataConfig, 
+                 deal_cfg: DEALConfig, 
+                 flare_cfg: FlareConfig):
+        
+        self.data_cfg = data_cfg
+        self.deal_cfg = deal_cfg
+        self.flare_cfg = flare_cfg
 
-    ## jitter positions to give nonzero force on first frame
-    super_cell.positions += (2 * np.random.rand(len(super_cell), 3) - 1) * jitter
+        # Check if a single traj or a list is provided
+        if isinstance(self.data_cfg.files, str):
+            self.data_cfg.files = [self.data_cfg.files]
 
-    return super_cell
+        # Automatically detect species if not specified
+        if self.flare_cfg.species is None:
+            self.flare_cfg.species = self._get_species()
 
+        # Print configuratons is requested:
+        if self.deal_cfg.verbose:
 
-def get_gp_calc(flare_config):
-    """
-    Return a FLARE_Calculator with gp from GaussianProcess
-    """
-    from flare.bffs.gp import GaussianProcess
-    from flare.bffs.mgp import MappedGaussianProcess
-    from flare.bffs.gp.calculator import FLARE_Calculator
-    from flare.utils.parameter_helper import ParameterHelper
+            print('[INFO] Configurations:')
+            print('-',pformat(self.data_cfg))
+            print('-',pformat(self.deal_cfg))
+            print('-',pformat(self.flare_cfg))
+            print('')
 
-    gp_file = flare_config.get("file", None)
+        # Build SGP calculator 
+        self.flare_calc, self.kernels = self._get_sgp_calc(asdict(self.flare_cfg))
+        self.gp = self.flare_calc.gp_model
 
-    # Load GP from file
-    if gp_file is not None:
-        with open(gp_file, "r") as f:
-            gp_dct = json.loads(f.readline())
-            if gp_dct.get("class", None) == "FLARE_Calculator":
-                flare_calc = FLARE_Calculator.from_file(gp_file)
-            else:
-                gp, _ = GaussianProcess.from_file(gp_file)
-                flare_calc = FLARE_Calculator(gp)
-        return flare_calc
+        # Default update_threshold if not set
+        if self.deal_cfg.update_threshold is None:
+            self.deal_cfg.update_threshold = 0.8 * self.deal_cfg.threshold
 
-    # Create gaussian process model
-    kernels = flare_config.get("kernels")
-    hyps = flare_config.get("hyps", "random")
-    opt_algorithm = flare_config.get("opt_algorithm", "BFGS")
-    max_iterations = flare_config.get("max_iterations", 20)
-    bounds = flare_config.get("bounds", None)
+        self.selected_frames: List = []
+        self.dft_count: int = 0
+        self.last_dft_step: int = -10**9   # effectively -∞
 
-    gp_parameters = flare_config.get("gp_parameters")
-    n_cpus = flare_config.get("n_cpus", 1)
-    use_mapping = flare_config.get("use_mapping", False)
+    # ------------------------------------------------------------------
+    # basic helpers
+    # ------------------------------------------------------------------
 
-    # set up GP hyperparameters
-    pm = ParameterHelper(
-        kernels=kernels,
-        random=True,
-        parameters=gp_parameters,
-    )
-    hm = pm.as_dict()
-    if hyps == "random":
-        hyps = hm["hyps"]
+    def _frames(self):
+        """Generator over all frames in all trajectory files."""
+        for fname in self.data_cfg.files:
+            for at in iread(fname, index=self.data_cfg.index, format=self.data_cfg.format):
+                yield at
 
-    gp_model = GaussianProcess(
-        kernels=kernels,
-        component="mc",
-        hyps=hyps,
-        cutoffs=hm["cutoffs"],
-        hyps_mask=None,
-        hyp_labels=hm["hyp_labels"],
-        opt_algorithm=opt_algorithm,
-        maxiter=max_iterations,
-        parallel=n_cpus > 1,
-        per_atom_par=flare_config.get("per_atom_par", True),
-        n_cpus=n_cpus,
-        n_sample=flare_config.get("n_sample", 100),
-        output=None,
-        name=flare_config.get("name", "default_gp"),
-        energy_noise=flare_config.get("energy_noise", 0.01),
-    )
+    def _get_species(self):
+        """
+        Detect species automatically using the DataConfig instance.
+        Reads only the first frame from the first file.
+        """
+        for fname in self.data_cfg.files:
+            for atoms in iread(fname, index=self.data_cfg.index, format=self.data_cfg.format):
+                return sorted(set(atoms.get_atomic_numbers().tolist()))
 
-    # create mapped gaussian process
-    if use_mapping:
-        grid_params = flare_config.get("grid_params")
-        var_map = flare_config.get("var_map", "pca")
-        unique_species = flare_config.get("unique_species")
-        coded_unique_species = symbols2numbers(unique_species)
-        mgp_model = MappedGaussianProcess(
-            grid_params=grid_params,
-            unique_species=coded_unique_species,
-            n_cpus=n_cpus,
-            var_map=var_map,
-        )
-    else:
-        mgp_model = None
+    def _extract_dft(self, ase_atoms):
+        """
+        Extract DFT forces / energy / stress from a frame.
 
-    flare_calc = FLARE_Calculator(
-        gp_model=gp_model,
-        mgp_model=mgp_model,
-        par=n_cpus > 1,
-        use_mapping=use_mapping,
-    )
-    return flare_calc, kernels
-
-
-def get_sgp_calc(flare_config):
-    """
-    Return a SGP_Calculator with sgp from SparseGP
-    """
-    from flare.bffs.sgp._C_flare import NormalizedDotProduct, SquaredExponential
-    from flare.bffs.sgp._C_flare import B2, B3, TwoBody, ThreeBody, FourBody
-    from flare.bffs.sgp import SGP_Wrapper
-    from flare.bffs.sgp.calculator import SGP_Calculator
-
-    sgp_file = flare_config.get("file", None)
-
-    # Load sparse GP from file
-    if sgp_file is not None:
-        with open(sgp_file, "r") as f:
-            gp_dct = json.loads(f.readline())
-            if gp_dct.get("class", None) == "SGP_Calculator":
-                flare_calc, kernels = SGP_Calculator.from_file(sgp_file)
-            else:
-                sgp, kernels = SGP_Wrapper.from_file(sgp_file)
-                flare_calc = SGP_Calculator(sgp)
-        return flare_calc, kernels
-
-    kernels = flare_config.get("kernels")
-    opt_algorithm = flare_config.get("opt_algorithm", "BFGS")
-    max_iterations = flare_config.get("max_iterations", 20)
-    bounds = flare_config.get("bounds", None)
-    use_mapping = flare_config.get("use_mapping", False)
-
-    # Define kernels.
-    kernels = []
-    for k in flare_config["kernels"]:
-        if k["name"] == "NormalizedDotProduct":
-            kernels.append(NormalizedDotProduct(k["sigma"], k["power"]))
-        elif k["name"] == "SquaredExponential":
-            kernels.append(SquaredExponential(k["sigma"], k["ls"]))
-        else:
-            raise NotImplementedError(f"{k['name']} kernel is not implemented")
-
-    # Define descriptor calculators.
-    n_species = len(flare_config["species"])
-    cutoff = flare_config["cutoff"]
-    descriptors = []
-    for d in flare_config["descriptors"]:
-        if "cutoff_matrix" in d:  # multiple cutoffs
-            assert np.allclose(np.array(d["cutoff_matrix"]).shape, (n_species, n_species)),\
-                "cutoff_matrix needs to be of shape (n_species, n_species)"
-
-        if d["name"] == "B2":
-            radial_hyps = [0.0, cutoff]
-            cutoff_hyps = []
-            descriptor_settings = [n_species, d["nmax"], d["lmax"]]
-            if "cutoff_matrix" in d:  # multiple cutoffs
-                desc_calc = B2(
-                    d["radial_basis"],
-                    d["cutoff_function"],
-                    radial_hyps,
-                    cutoff_hyps,
-                    descriptor_settings,
-                    d["cutoff_matrix"],
-                )
-            else:
-                desc_calc = B2(
-                    d["radial_basis"],
-                    d["cutoff_function"],
-                    radial_hyps,
-                    cutoff_hyps,
-                    descriptor_settings,
-                )
-
-        elif d["name"] == "B3":
-            radial_hyps = [0.0, cutoff]
-            cutoff_hyps = []
-            descriptor_settings = [n_species, d["nmax"], d["lmax"]]
-            desc_calc = B3(
-                d["radial_basis"],
-                d["cutoff_function"],
-                radial_hyps,
-                cutoff_hyps,
-                descriptor_settings,
+        Assumes the extxyz was written with energies and forces and that
+        ASE has attached a SinglePointCalculator to atoms.calc.
+        """
+        if ase_atoms.calc is None:
+            raise RuntimeError(
+                "Frame has no calculator attached. Make sure your extxyz "
+                "contains energies/forces so ASE builds a SinglePointCalculator."
             )
 
-        elif d["name"] == "TwoBody":
-            desc_calc = TwoBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+        res = ase_atoms.calc.results
+        forces = np.array(res["forces"])
+        energy = float(res.get("energy", ase_atoms.info.get("energy", 0.0)))
+        stress = res.get("stress", None)
 
-        elif d["name"] == "ThreeBody":
-            desc_calc = ThreeBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+        return forces, energy, stress
 
-        elif d["name"] == "FourBody":
-            desc_calc = FourBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+    def _print_progress(self, step: int):
+        msg = f"[DEAL] Examined: {step+1} | Selected: {self.dft_count}"
+        sys.stdout.write("\r" + msg)
+        sys.stdout.flush()
 
+    # ------------------------------------------------------------------
+    # main loop
+    # ------------------------------------------------------------------
+
+    def run(self) -> None:
+        for step, ase_frame in enumerate(self._frames()):
+            # 1) DFT labels from original ASE frame
+            dft_forces, dft_energy, dft_stress = self._extract_dft(ase_frame)
+
+            # 2) Convert to FLARE_Atoms for SGP calculations & uncertainties
+            atoms = FLARE_Atoms.from_ase_atoms(ase_frame)
+            # 2a) INITIALIZATION: if GP has no training data, use first frame
+            #     to bootstrap the model (no uncertainty check).
+            if len(self.gp.training_data) == 0:
+                self._update_gp(
+                    atoms=atoms,
+                    train_atoms=list(range(len(atoms))),
+                    dft_frcs=dft_forces,
+                    dft_energy=dft_energy,
+                    dft_stress=dft_stress,
+                )
+                self.last_dft_step = step
+                self._store_selected_frame(step, ase_frame,
+                                           target_atoms=list(range(len(atoms))))
+                continue
+
+            # 3) Predict with SGP and compute uncertainties
+            atoms.calc = self.flare_calc
+            _ = atoms.get_forces()   # triggers GP eval and stores stds internally
+
+            std_in_bound, target_atoms = is_std_in_bound(
+                self.deal_cfg.threshold * -1, # threshold = - std_tolerance_factor
+                self.gp.force_noise,
+                atoms,
+                max_atoms_added=self.deal_cfg.max_atoms_added,
+                update_style="threshold",
+                update_threshold=self.deal_cfg.update_threshold,
+            )
+
+            steps_since_last = step - self.last_dft_step
+            if (not std_in_bound) and (steps_since_last >= self.deal_cfg.min_steps_with_model):
+                # Select this frame & update GP
+                self.last_dft_step = step
+                self._store_selected_frame(step, ase_frame, target_atoms)
+                self._update_gp(
+                    atoms=atoms,
+                    train_atoms=list(target_atoms),
+                    dft_frcs=dft_forces,
+                    dft_energy=dft_energy,
+                    dft_stress=dft_stress,
+                )
+            
+            # ========== print progress ==========
+            self._print_progress(step)
+
+        # newline so terminal prompt doesn't collide with progress line
+        print('\n')
+
+        # ------------------------------------------------------------------
+        # outputs
+        # ------------------------------------------------------------------
+        if self.selected_frames:
+            out_xyz = f"{self.deal_cfg.output_prefix}_selected.xyz"
+            write(out_xyz, self.selected_frames)
+            chem_input=False
+            try:
+                create_chemiscope_input(
+                    trajectory=out_xyz,
+                    filename=f"{self.deal_cfg.output_prefix}_chemiscope.json.gz",
+                    colvar=self.data_cfg.colvar, 
+                    verbose=self.deal_cfg.verbose
+                )
+                chem_input=True
+            except Exception as exc:
+                print(f"[ERROR] Could not write chemiscope file: {exc}")
+
+            # Save final SGP model
+            self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
+            
+            if self.deal_cfg.verbose:
+                print(f"""\n[INFO] Created files:
+- SELECTED:   {self.deal_cfg.output_prefix}_selected.xyz
+- GP_MODEL:   {self.deal_cfg.output_prefix}_flare.json""")
+                if chem_input:
+                    print(f"- CHEMISCOPE: {self.deal_cfg.output_prefix}_chemiscope.json.gz\n")
+
+    # ------------------------------------------------------------------
+    # GP creation and update
+    # ------------------------------------------------------------------
+
+    def _get_sgp_calc(self, flare_config):
+        """
+        Return a SGP_Calculator with sgp from SparseGP
+        source: https://github.com/mir-group/flare/blob/master/flare/scripts/otf_train.py
+        """
+        from flare.bffs.sgp._C_flare import NormalizedDotProduct, SquaredExponential
+        from flare.bffs.sgp._C_flare import B2, B3, TwoBody, ThreeBody, FourBody
+        from flare.bffs.sgp import SGP_Wrapper
+        from flare.bffs.sgp.calculator import SGP_Calculator
+
+        sgp_file = flare_config.get("file", None)
+
+        # Load sparse GP from file
+        if sgp_file is not None:
+            with open(sgp_file, "r") as f:
+                gp_dct = json.loads(f.readline())
+                if gp_dct.get("class", None) == "SGP_Calculator":
+                    flare_calc, kernels = SGP_Calculator.from_file(sgp_file)
+                else:
+                    sgp, kernels = SGP_Wrapper.from_file(sgp_file)
+                    flare_calc = SGP_Calculator(sgp)
+            return flare_calc, kernels
+
+        kernels = flare_config.get("kernels")
+        opt_algorithm = flare_config.get("opt_algorithm", "BFGS")
+        max_iterations = flare_config.get("max_iterations", 20)
+        bounds = flare_config.get("bounds", None)
+        use_mapping = flare_config.get("use_mapping", False)
+
+        # Define kernels.
+        kernels = []
+        for k in flare_config["kernels"]:
+            if k["name"] == "NormalizedDotProduct":
+                kernels.append(NormalizedDotProduct(k["sigma"], k["power"]))
+            elif k["name"] == "SquaredExponential":
+                kernels.append(SquaredExponential(k["sigma"], k["ls"]))
+            else:
+                raise NotImplementedError(f"{k['name']} kernel is not implemented")
+
+        # Define descriptor calculators.
+        n_species = len(flare_config["species"])
+        cutoff = flare_config["cutoff"]
+        descriptors = []
+        for d in flare_config["descriptors"]:
+            if "cutoff_matrix" in d:  # multiple cutoffs
+                assert np.allclose(np.array(d["cutoff_matrix"]).shape, (n_species, n_species)),\
+                    "cutoff_matrix needs to be of shape (n_species, n_species)"
+
+            if d["name"] == "B2":
+                radial_hyps = [0.0, cutoff]
+                cutoff_hyps = []
+                descriptor_settings = [n_species, d["nmax"], d["lmax"]]
+                if "cutoff_matrix" in d:  # multiple cutoffs
+                    desc_calc = B2(
+                        d["radial_basis"],
+                        d["cutoff_function"],
+                        radial_hyps,
+                        cutoff_hyps,
+                        descriptor_settings,
+                        d["cutoff_matrix"],
+                    )
+                else:
+                    desc_calc = B2(
+                        d["radial_basis"],
+                        d["cutoff_function"],
+                        radial_hyps,
+                        cutoff_hyps,
+                        descriptor_settings,
+                    )
+
+            elif d["name"] == "B3":
+                radial_hyps = [0.0, cutoff]
+                cutoff_hyps = []
+                descriptor_settings = [n_species, d["nmax"], d["lmax"]]
+                desc_calc = B3(
+                    d["radial_basis"],
+                    d["cutoff_function"],
+                    radial_hyps,
+                    cutoff_hyps,
+                    descriptor_settings,
+                )
+
+            elif d["name"] == "TwoBody":
+                desc_calc = TwoBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+
+            elif d["name"] == "ThreeBody":
+                desc_calc = ThreeBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+
+            elif d["name"] == "FourBody":
+                desc_calc = FourBody(cutoff, n_species, d["cutoff_function"], cutoff_hyps)
+
+            else:
+                raise NotImplementedError(f"{d['name']} descriptor is not supported")
+
+            descriptors.append(desc_calc)
+
+        # Define remaining parameters for the SGP wrapper.
+        species_map = {flare_config.get("species")[i]: i for i in range(n_species)}
+        sae_dct = flare_config.get("single_atom_energies", None)
+        if sae_dct is not None:
+            assert n_species == len(
+                sae_dct
+            ), "'single_atom_energies' should be the same length as 'species'"
+            single_atom_energies = {i: sae_dct[i] for i in range(n_species)}
         else:
-            raise NotImplementedError(f"{d['name']} descriptor is not supported")
+            single_atom_energies = {i: 0 for i in range(n_species)}
 
-        descriptors.append(desc_calc)
+        sgp = SGP_Wrapper(
+            kernels=kernels,
+            descriptor_calculators=descriptors,
+            cutoff=cutoff,
+            sigma_e=flare_config.get("energy_noise",0.1),
+            sigma_f=flare_config.get("forces_noise",0.05),
+            sigma_s=flare_config.get("stress_noise",0.1),
+            species_map=species_map,
+            variance_type=flare_config.get("variance_type", "local"),
+            single_atom_energies=single_atom_energies,
+            energy_training=flare_config.get("energy_training", True),
+            force_training=flare_config.get("force_training", True),
+            stress_training=flare_config.get("stress_training", True),
+            max_iterations=max_iterations,
+            opt_method=opt_algorithm,
+            bounds=bounds,
+        )
 
-    # Define remaining parameters for the SGP wrapper.
-    species_map = {flare_config.get("species")[i]: i for i in range(n_species)}
-    sae_dct = flare_config.get("single_atom_energies", None)
-    if sae_dct is not None:
-        assert n_species == len(
-            sae_dct
-        ), "'single_atom_energies' should be the same length as 'species'"
-        single_atom_energies = {i: sae_dct[i] for i in range(n_species)}
-    else:
-        single_atom_energies = {i: 0 for i in range(n_species)}
+        flare_calc = SGP_Calculator(sgp, use_mapping)
+        return flare_calc, kernels
 
-    sgp = SGP_Wrapper(
-        kernels=kernels,
-        descriptor_calculators=descriptors,
-        cutoff=cutoff,
-        sigma_e=flare_config.get("energy_noise",0.1),
-        sigma_f=flare_config.get("forces_noise",0.05),
-        sigma_s=flare_config.get("stress_noise",0.1),
-        species_map=species_map,
-        variance_type=flare_config.get("variance_type", "local"),
-        single_atom_energies=single_atom_energies,
-        energy_training=flare_config.get("energy_training", True),
-        force_training=flare_config.get("force_training", True),
-        stress_training=flare_config.get("stress_training", True),
-        max_iterations=max_iterations,
-        opt_method=opt_algorithm,
-        bounds=bounds,
-    )
+    def _store_selected_frame(self, step: int, ase_frame, target_atoms: Sequence[int]):
+        """Keep a copy of the selected ASE frame for writing to XYZ."""
+        sel = ase_frame.copy()
+        sel.info["step"] = step
+        sel.info["target_atoms"] = np.array(target_atoms, dtype=int)
+        self.selected_frames.append(sel)
+        self.dft_count += 1
 
-    flare_calc = SGP_Calculator(sgp, use_mapping)
-    return flare_calc, kernels
-
-def fresh_start_otf(config):
-    """
-    Set up OTF training engine
-    """
-
-    # initial config (supercell) setting 
-    if "supercell" not in config:
-        config['supercell'] = {'file': config['input_data']['filenames'][0], 
-                               'format': config['input_data'].get('format', None)}
-
-    # Load initial confguration      
-    atoms = get_super_cell(config["supercell"])
-    if "species" not in config["flare_calc"]:
-        config["flare_calc"]["species"] = sorted(list(set(atoms.get_atomic_numbers())))
-
-    # Create fake calculator
-    dft_calc = FakeDFT()
-
-    # Create SGP 
-    flare_calc, kernels = get_sgp_calc(config["flare_calc"])
-
-    # otf settings
-    otf_config = config.get("otf")
-    if "output_name" not in otf_config:
-        otf_config["output_name"] = "deal"
-    if "md_engine" not in otf_config:
-        otf_config["md_engine"] = "Fake"
-    if "md_kwargs" not in otf_config:
-        otf_config["md_kwargs"] = config["input_data"]
-
-    otf = OTF_DEAL(
+    def _update_gp(
+        self,
         atoms,
-        flare_calc=flare_calc,
-        dft_calc=dft_calc,
-        **otf_config,
+        train_atoms: Sequence[int],
+        dft_frcs: np.ndarray,
+        dft_energy: float | None = None,
+        dft_stress: np.ndarray | None = None,
+    ) -> None:
+        """
+        Update the SGP using DFT forces (and optionally energies/stress)
+        on the current FLARE_Atoms structure.
+
+        This mirrors original update gp from FLARE OTF, but without
+        wall-time logging or mapping.
+        """
+        # Convert stress into FLARE convention if present
+        flare_stress = None
+        if dft_stress is not None:
+            dft_stress = np.asarray(dft_stress)
+            # allow either 3x3 tensor or 6-vector from ASE
+            if dft_stress.shape == (3, 3):
+                xx, yy, zz = dft_stress[0, 0], dft_stress[1, 1], dft_stress[2, 2]
+                yz, xz, xy = dft_stress[1, 2], dft_stress[0, 2], dft_stress[0, 1]
+                dft_stress_voigt = np.array([xx, yy, zz, yz, xz, xy])
+            else:
+                dft_stress_voigt = dft_stress
+
+            # ASE uses +sigma; FLARE uses -sigma in this convention
+            flare_stress = -np.array(
+                [
+                    dft_stress_voigt[0],
+                    dft_stress_voigt[5],
+                    dft_stress_voigt[4],
+                    dft_stress_voigt[1],
+                    dft_stress_voigt[3],
+                    dft_stress_voigt[2],
+                ]
+            )
+
+        if self.deal_cfg.force_only:
+            dft_energy = None
+            flare_stress = None
+
+        # Store a copy of the structure, attach DFT labels via SinglePointCalculator
+        struc_to_add = deepcopy(atoms)
+
+        sp_results = {"forces": dft_frcs}
+        if dft_energy is not None:
+            sp_results["energy"] = dft_energy
+        if flare_stress is not None:
+            sp_results["stress"] = flare_stress
+
+        struc_to_add.calc = SinglePointCalculator(struc_to_add, **sp_results)
+
+        # Update GP database 
+        self.gp.update_db(
+            struc_to_add,
+            dft_frcs,
+            custom_range=list(train_atoms),
+            energy=dft_energy,
+            stress=np.zeros(6) if flare_stress is None else flare_stress,
+        )
+
+        # Update internal L and alpha
+        self.gp.set_L_alpha()
+
+        # Train hyperparameters
+        if self.deal_cfg.train_hyps:
+            self.gp.train(logger_name=None)
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="DEAL selector: read a YAML config or specify a trajectory and (optionally) a threshold."
     )
 
-    otf.run()
+    parser.add_argument(
+        "-c", "--config",
+        dest="config",
+        help="YAML configuration file."
+    )
+    parser.add_argument(
+        "-f", "--file",
+        dest="filename",
+        help="Input trajectory file (e.g. traj.xyz)."
+    )
+    parser.add_argument(
+        "-t", "--threshold",
+        type=float,
+        dest="threshold",
+        help="GP uncertainty threshold that triggers selection."
+    )
+
+    return parser.parse_args()
 
 
-def restart_otf(config):
-    """
-    Set up OTF training engine. Restart with checkpoint files
-    """
+def main() -> None:
 
-    otf_config = config.get("otf")
-    checkpoint = otf_config.get("checkpoint")
-    otf = OTF_DEAL.from_checkpoint(checkpoint)
+    print("""
+888888ba   88888888b  .d888888  88        
+88     8b  88        d8     88  88        
+88     88  88aaaa    88aaaaa88  88        
+88     88  88        88     88  88        
+88     8P  88        88     88  88        
+8888888P   88888888P 88     88  888888888
+""")
 
-    # allow modification of some parameters
-    for attr in [
-        "number_of_steps",
-        "rescale_steps",
-        "rescale_temps",
-        "write_model",
-        "freeze_hyps",
-        "store_dft_output",
-    ]:
-        if attr in otf_config:
-            setattr(otf, attr, otf_config.get(attr))
+    args = parse_args()
+    cfg_dict = {}
 
-    otf.run()
+    # Start from YAML config if provided
+    if args.config is not None:
+        with open(args.config, "r") as f:
+            cfg_dict = yaml.safe_load(f) or {}
 
-def main():
-    with open(sys.argv[1], "r") as f:
-        config = yaml.safe_load(f)
+    # Initialize dicts if not available
+    for key in ["data", "deal", "flare"]:
+        if key not in cfg_dict:
+            cfg_dict[key] = {}
 
-    mode = config.get("otf").get("mode", "fresh")
-    if mode == "fresh":
-        fresh_start_otf(config)
-    elif mode == "restart":
-        restart_otf(config)
+    # Overwrite / fill from CLI options
+    if args.filename is not None:
+        cfg_dict["data"]["files"] = [args.filename]
+    if args.threshold is not None:
+        cfg_dict["deal"]["threshold"] = args.threshold
+
+    # Check file
+    try:
+        cfg_dict["data"]["files"][0]
+    except KeyError:
+        print('[ERROR] No input trajectory specified. Please provide a trajectory file (-f/--file) or a YAML config file (-c/--config).')
+        sys.exit(1)
+
+    # Build configs and run
+    data_cfg = DataConfig(**cfg_dict["data"])
+    deal_cfg = DEALConfig(**cfg_dict["deal"])
+    flare_cfg = FlareConfig(**cfg_dict["flare"])
+
+    # Handle multiple thresholds
+    if isinstance(deal_cfg.threshold, list):
+        prefix = deal_cfg.output_prefix
+        for threshold in deal_cfg.threshold:
+            print('[DEAL] Running with threshold:', threshold)
+            deal_cfg.threshold = threshold
+            deal_cfg.output_prefix = f"{prefix}_{str(threshold)}"
+            DEAL(data_cfg, deal_cfg, flare_cfg).run()
+    else:
+        DEAL(data_cfg, deal_cfg, flare_cfg).run()
 
 if __name__ == "__main__":
     main()
+
