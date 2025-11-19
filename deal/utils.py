@@ -257,7 +257,7 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
 
                 else: # check if atoms.info has a step field and retrieve the colvar from that step
                     for i,atoms in enumerate(traj):
-                        if 'step' in atoms.info:
+                        if 'frame' in atoms.info:
                             for col in colvar.columns:
                                 atoms.info['colvar.'+col] = colvar[col].loc[atoms.info['step']]
 

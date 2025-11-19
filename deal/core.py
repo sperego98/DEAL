@@ -386,7 +386,8 @@ class DEAL:
         """Keep a copy of the selected ASE frame for writing to XYZ."""
         sel = ase_frame.copy()
         sel.info["step"] = step
-        sel.info["frame"] = step # TODO change if data is shuffled
+        if "frame" not in sel.info:
+            sel.info["frame"] = step
         sel.info["target_atoms"] = np.array(target_atoms, dtype=int)
         self.selected_frames.append(sel)
         self.dft_count += 1

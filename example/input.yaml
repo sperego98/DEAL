@@ -1,16 +1,16 @@
 data:
-  files: ["traj.xyz"]                         
+  files: ["traj.xyz"]            # can be a single value or a list             
   format: extxyz
   index: ":" 
   #colvar: COLVAR                # save collective variables into selected frames for chemiscope
 
 deal:
-  threshold: 0.2 
+  threshold: 0.1 
   # threshold:                   # can be a single value or a list 
   # - 0.05
   # - 0.1
   # - 0.2
-  update_threshold: 0.08         # optional, if omitted = 0.8 * threshold
+  #update_threshold: 0.08         # optional, if omitted = 0.8 * threshold
   max_atoms_added: -1           
   min_steps_with_model: 0
   output_prefix: deal
