@@ -108,7 +108,7 @@ class DEAL:
             print('-',pformat(self.flare_cfg))
             print('')
 
-        # Build SGP calculator using your existing helper
+        # Build SGP calculator 
         self.flare_calc, self.kernels = self._get_sgp_calc(asdict(self.flare_cfg))
         self.gp = self.flare_calc.gp_model
 
@@ -177,7 +177,6 @@ class DEAL:
 
             # 2) Convert to FLARE_Atoms for SGP calculations & uncertainties
             atoms = FLARE_Atoms.from_ase_atoms(ase_frame)
-
             # 2a) INITIALIZATION: if GP has no training data, use first frame
             #     to bootstrap the model (no uncertainty check).
             if len(self.gp.training_data) == 0:
@@ -451,16 +450,15 @@ class DEAL:
             dft_frcs,
             custom_range=list(train_atoms),
             energy=dft_energy,
-            stress=flare_stress,
+            stress=np.zeros(6) if flare_stress is None else flare_stress,
         )
 
         # Update internal L and alpha
         self.gp.set_L_alpha()
 
-        # Optionally train hyperparameters
+        # Train hyperparameters
         if self.deal_cfg.train_hyps:
             self.gp.train(logger_name=None)
-
 
 def parse_args():
     parser = argparse.ArgumentParser(
