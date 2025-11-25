@@ -16,6 +16,11 @@ ___
     - Evaluate relevant CVs (e.g. coordination numbers) using PLUMED
 - **selection**
     - Run DEAL with different thresholds and visualize structures
+    
+    ```
+    deal -c input.yaml
+    ``` 
+    (consider running it on a HPC cluster or on a high-memory machine)
 
     
 
