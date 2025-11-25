@@ -274,12 +274,14 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
 
     # Check if CV names can be converted to float
     for p in prop_names:
+        if p == "target_atoms":
+            continue
         try:
             float(atoms.info[p])
             prop_names_float.append(p)
         except TypeError:
-            if p != "target_atoms":
-                print(f'skipping "{p}" as it cannot be converted to float.')
+            #if p != "target_atoms":
+            print(f'skipping "{p}" as it cannot be converted to float.')
 
     if verbose:
         print('[INFO] CV names:',prop_names_float)
