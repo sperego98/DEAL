@@ -1,8 +1,10 @@
 data:
-  files: ["traj.xyz"]            # can be a single value or a list             
+  files: "../data/traj.xyz"            # can be a single value or a list             
   format: extxyz
-  index: ":" 
-  #colvar: COLVAR                # save collective variables into selected frames for chemiscope
+  index: ":5" 
+  colvar: ../data/COLVAR                # save collective variables into selected frames for chemiscope
+  shuffle: true
+  seed: 42
 
 deal:
   threshold: 0.1 

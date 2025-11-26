@@ -1,0 +1,1 @@
+deal -c input.yaml
