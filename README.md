@@ -105,6 +105,8 @@ data:
   files: ["traj.xyz"]
   format: "extxyz"
   index: ":"
+  shuffle: False
+  seed: 42
 
 deal:
   threshold: 0.15

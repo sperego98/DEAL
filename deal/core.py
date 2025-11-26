@@ -25,6 +25,8 @@ class DataConfig:
     format: Optional[str] = None
     index: str = ":"                 # ASE selection string
     colvar: Optional[List[str]] = None
+    shuffle: bool = False 
+    seed: int = 42 
 
 @dataclass
 class DEALConfig:
@@ -104,7 +106,6 @@ class DEAL:
 
         # Print configuratons is requested:
         if self.deal_cfg.verbose:
-
             print('[INFO] Configurations:')
             print('-',pformat(self.data_cfg))
             print('-',pformat(self.deal_cfg))
@@ -128,10 +129,38 @@ class DEAL:
     # ------------------------------------------------------------------
 
     def _frames(self):
-        """Generator over all frames in all trajectory files."""
+        """Generator over all frames, optionally shuffled, with
+        atoms.info['frame'] containing the original global index."""
+        
+        if not self.data_cfg.shuffle:
+            # Streaming, non-shuffled mode
+            global_idx = 0
+            for fname in self.data_cfg.files:
+                for at in iread(fname,
+                                index=self.data_cfg.index,
+                                format=self.data_cfg.format):
+                    at.info["frame"] = global_idx
+                    global_idx += 1
+                    yield at
+            return
+
+        # --- Shuffling mode: load all frames first ---
+        frames = []
+        global_idx = 0
+
         for fname in self.data_cfg.files:
-            for at in iread(fname, index=self.data_cfg.index, format=self.data_cfg.format):
-                yield at
+            for at in iread(fname,
+                            index=self.data_cfg.index,
+                            format=self.data_cfg.format):
+                at.info["frame"] = global_idx
+                frames.append(at)
+                global_idx += 1
+
+        rng = np.random.default_rng(self.data_cfg.seed)
+        rng.shuffle(frames)
+
+        for at in frames:
+            yield at
 
     def _get_species(self):
         """
