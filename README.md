@@ -24,7 +24,7 @@ The method is described in:
 ---
 
 ## Table of contents
-- [Contents](#-contents)
+- 📚 [Contents](#-contents)
 - 🔧 [Dependencies](#-dependencies)
 - 🚀 [Installation](#-installation)
 - 🧪 [Usage](#-usage)
@@ -33,10 +33,11 @@ The method is described in:
   - [Python usage](#python-usage)
   - [Output files](#output-files)
   - [Multiple thresholds](#multiple-thresholds)
+- 🎛️ [Choice of the parameters](#choice-of-the-parameters)
 
 ---
 
-## Contents
+## 📚 Contents
 
 * **`deal/`** – The core Python package.
 * **`examples/`** – Two realistic workflows demonstrating how to use DEAL in practice.
@@ -97,7 +98,7 @@ DEAL can be run either with a command-line tool (`deal`) or using the python cla
 ---
 
 
-### ⭐ Minimal example
+### 🟢 Minimal example
 
 ```bash
 deal --file traj.xyz --threshold 0.1
@@ -127,14 +128,21 @@ data:
   seed: 42
 
 deal:
-  threshold: 0.15
-  output_prefix: "deal"
+  threshold: 0.1
+  update_threshold: 0.08        
+  max_atoms_added: -1           
+  min_steps_with_model: 0
+  output_prefix: deal
+  force_only: true
+  train_hyps: false
+  verbose: true
+  save_gp: false
 
 flare_calc:
   gp: SGP_Wrapper
   kernels:
     - name: NormalizedDotProduct
-      sigma: 2
+      sigma: 2 
       power: 2
   descriptors:
     - name: B2
@@ -196,4 +204,33 @@ for thr in [0.10, 0.15, 0.20]:
     DEAL(data_cfg, deal_cfg, flare_cfg).run()
 ```
 
+## 🎛️ Choice of the parameters
 
+**Descriptors**
+
+Local environments are characterized via the Atomic Cluster Expansion formalism as implemented in `flare`. Key hyperparameters: body order (`B1/B2`), radial degree `nmax`, angular degree `lmax`, and `cutoff` (in Å).
+
+```yaml
+  descriptors:
+    - name: B2
+      nmax: 8
+      lmax: 3
+      cutoff_function: cosine
+      radial_basis: chebyshev
+  cutoff: 4.5
+```      
+
+**Threshold**
+```yaml
+  threshold: 0.1
+  update_threshold: 0.08  # if not set it is chosen as 0.8 * threshold      
+  max_atoms_added: -1 # no limit on the number of selected environment of a given configuration to the GP    
+```      
+
+The`threshold` parameter in the DEAL configuration controls when a local environment is flagged by the SGP’s predictive variance (normalized by the noise hyperparameter). If any environment exceeds the threshold, the GP is updated and that environment (plus any others above `update_threshold * threshold`, up to `max_atoms_added`) is added. 
+
+Some tips:
+
+- A good starting point is around 0.1.
+- Try a few values and compare how many structures are selected; distributions often are very similar across thresholds, what changes is the number of structures.
+- For active learning of ML potentials a possible practical strategy is to pick an initial threshold, run the single-point calculations on the selected structure, update the potential, and then evaluate it on configurations chosen with a tighter threshold to ensure that they are well  described, otherwise expand the training set with them.  
