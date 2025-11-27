@@ -14,7 +14,7 @@ The method is described in:
 ## Highlights
 
 * Select structures based on SGP predictive variance. 
-* Analyze selected strctures (e.g. along the trajectory or as a function of a CV)
+* Analyze selected structures (e.g. along the trajectory or as a function of a CV)
 
     <img src="examples/formate/imgs/analysis.png" alt="drawing" width="824"/>
 * Interactive visualization using [chemiscope](https://chemiscope.org/)
