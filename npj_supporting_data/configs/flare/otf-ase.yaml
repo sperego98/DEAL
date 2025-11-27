@@ -1,0 +1,19 @@
+# On-the-fly training and MD with ASE
+otf: 
+    mode: fresh                                                                 # Start from empty SGP
+    md_engine: NVTBerendsen                                                     # Define MD engine, here we use the Velocity Verlet engine from ASE. LAMMPS examples can be found in the `flare/examples` directory in the repo
+    md_kwargs: { 'temperature' : 700, 'taut' : 0.1 }         
+    initial_velocity: 700                                                       # Initialize the velocities (units of Kelvin)
+    dt: 0.001                                                                   # This value is arbitrary in this setting
+    number_of_steps: 10000                                                      # Total number of MD steps to be taken. Set to a value greater than the number of your DFT frames
+    output_name: otf                                                            # output name
+    init_atoms: [-1,-2]                                                         # init atoms from first frame to add to sparse set
+    std_tolerance_factor: -0.01                                                 # The uncertainty threshold above which the DFT will be called. This value is typically scaled with the number of species (e.g., -0.05 for 2 species, -0.1 for 3, etc.)
+    max_atoms_added: -1                                                         # Allow for all atoms in a given frame to be added to the sparse set if uncertainties permit              
+    train_hyps: [10,inf]                                                        # Define range in which hyperparameters will be optimized. Here, hyps are optimized at every DFT call after the 5th call.
+    write_model: 4                                                              # Verbosity of model output.
+    update_style: threshold                                                     # Sparse set update style. Atoms above a defined "threshold" will be added using this method
+    update_threshold: 0.001                                                     # Threshold for adding atoms if "update_style = threshold". Threshold represents relative uncertainty to mean atomic uncertainty, where atoms above are added to sparse set. This value is typically set to be 0.1*std_tolerance_factor.
+    force_only: False                                                      
+    dft_postprocessing: "srun pp.x -in ../../input/qe/espresso.ppi > espresso.ppo"
+    store_dft_output: [[espresso.pwi, espresso.pwo, espresso.ppo, espresso.charge_density.cube], single-point/]

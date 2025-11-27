@@ -1,0 +1,38 @@
+data:
+  files: "input/traj.xyz"            # can be a single value or a list             
+  format: extxyz
+  index: ":" 
+  colvar: colvar/COLVAR                # save collective variables into selected frames for chemiscope
+
+deal:
+  threshold:                   # can be a single value or a list 
+  - 0.05
+  - 0.10
+  - 0.15
+  - 0.20
+  max_atoms_added: 1           
+  min_steps_with_model: 0
+  output_prefix: "selection/deal" 
+  force_only: true
+  train_hyps: false
+  verbose: true
+  save_gp: false
+
+flare:
+  gp: SGP_Wrapper               # (see flare's documentation)
+  kernels:
+  - name: NormalizedDotProduct
+    sigma: 2
+    power: 2
+  descriptors:
+  - name: B2
+    nmax: 8
+    lmax: 3
+    cutoff_function: cosine
+    radial_basis: chebyshev
+  cutoff: 4.5
+  # species:                    # if not given they are parsed from the traj file
+  # - 1
+  # - 6
+  # - 8
+  # - 29

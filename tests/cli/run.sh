@@ -1,0 +1,1 @@
+deal --file "../data/traj.xyz" --threshold 0.5
