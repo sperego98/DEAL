@@ -8,19 +8,30 @@
 
 ___ 
 
-#### Structure
+#### Instructions
 
 - **input**
-    - Original trajectory (xyz) from OPES simulation and corresponding COLVAR file (used for monitoring the distribution of CVs)
+    - Get trajectory (xyz) from supporting data 
+    ```
+    cd input 
+    bash download.sh
+    ```
 - **colvar**
-    - Evaluate relevant CVs (e.g. coordination numbers) using PLUMED
+    - (optional) evaluate relevant CVs (e.g. coordination numbers) using PLUMED
+
+    ```
+    cd colvar
+    plumed driver --plumed plumed.dat --ixyz ../input/fcu.xyz --length-units A --box 10.638,10.03,30.0
+    ```
 - **selection**
     - Run DEAL with different thresholds and visualize structures
-    
+
     ```
+    cd selection
     deal -c input.yaml
     ``` 
-    (consider running it on a HPC cluster or on a high-memory machine)
+    (consider running it on a HPC cluster or on a large-memory machine)
 
+    The selection can be analyzed with the jupyter notebook [`analyze_and_view.ipynb`](`selection/analyze_and_view.ipynb`).
     
 
