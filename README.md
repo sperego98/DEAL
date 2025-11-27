@@ -2,7 +2,7 @@
 
 **Data Efficient Active Learning for Machine Learning Potentials**
 
-DEAL selects non-redundant structures from atomistic trajectories via Sparse Gaussian Processes. These structures can then be used to train machine-learning interatomic potentials (and more broadly, to identify informative configurations along reactive pathways).
+DEAL selects non-redundant structures from atomistic trajectories via Sparse Gaussian Processes, to be used to train machine-learning interatomic potentials.
 
 The method is described in:
 
@@ -14,10 +14,10 @@ The method is described in:
 ---
 
 ## Table of contents
-
-- [🔧 Dependencies](#-dependencies)
-- [🚀 Installation](#-installation)
-- [🧪 Usage](#-usage)
+- [Contents](#-contents)
+- 🔧 [Dependencies](#-dependencies)
+- 🚀 [Installation](#-installation)
+- 🧪 [Usage](#-usage)
   - [Minimal example](#minimal-example)
   - [With a YAML config file](#with-a-yaml-config-file)
   - [Python usage](#python-usage)
@@ -25,6 +25,13 @@ The method is described in:
   - [Multiple thresholds](#multiple-thresholds)
 
 ---
+
+## Contents
+
+* **`deal/`** – The core Python package.
+* **`examples/`** – Two realistic workflows demonstrating how to use DEAL in practice.
+* **`npj_supporting_data/`** – Jupyter notebooks reproducing the full workflow described in the publication, including the use of Gaussian Process Regression for reaction-pathway exploration.
+* **`tests/`** – A test suite to verify that the installation is correct and all components work as expected.
 
 ## 🔧 Dependencies
 
