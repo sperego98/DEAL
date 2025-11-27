@@ -2,7 +2,7 @@
 
 **Data Efficient Active Learning for Machine Learning Potentials**
 
-DEAL selects non-redundant structures from atomistic trajectories via Sparse Gaussian Processes. These structures can then be used to train machine-learning interatomic potentials (and more broadly, to identify informative configurations along reactive pathways).
+DEAL selects non-redundant structures from atomistic trajectories via Sparse Gaussian Processes (SGP), to be used to train machine-learning interatomic potentials.
 
 The method is described in:
 
@@ -11,13 +11,23 @@ The method is described in:
 > **npj Computational Materials 10, 291 (2024)**
 > doi: [10.1038/s41524-024-01481-6](https://doi.org/10.1038/s41524-024-01481-6)
 
+## Highlights
+
+* Select structures based on SGP predictive variance. 
+* Analyze selected structures (e.g. along the trajectory or as a function of a CV)
+
+    <img src="examples/formate/imgs/analysis.png" alt="drawing" width="824"/>
+* Interactive visualization using [chemiscope](https://chemiscope.org/)
+
+    <a href="https://chemiscope.org/?load=https://raw.githubusercontent.com/luigibonati/DEAL/refs/heads/main/examples/formate/selection/deal_0.1_chemiscope.json.gz"> <img src="examples/formate/imgs/chemiscope-viewer.png" alt="drawing" width="412"></a>
+
 ---
 
 ## Table of contents
-
-- [🔧 Dependencies](#-dependencies)
-- [🚀 Installation](#-installation)
-- [🧪 Usage](#-usage)
+- [Contents](#-contents)
+- 🔧 [Dependencies](#-dependencies)
+- 🚀 [Installation](#-installation)
+- 🧪 [Usage](#-usage)
   - [Minimal example](#minimal-example)
   - [With a YAML config file](#with-a-yaml-config-file)
   - [Python usage](#python-usage)
@@ -26,11 +36,19 @@ The method is described in:
 
 ---
 
+## Contents
+
+* **`deal/`** – The core Python package.
+* **`examples/`** – Two realistic workflows demonstrating how to use DEAL in practice.
+* **`npj_supporting_data/`** – Jupyter notebooks reproducing the full workflow described in the publication, including the use of Gaussian Process Regression for reaction-pathway exploration.
+* **`tests/`** – A test suite to verify that the installation is correct and all components work as expected.
+
 ## 🔧 Dependencies
 
 DEAL requires:
 
-* [`flare`](https://github.com/mir-group/flare)
+* `python<=3.13` 
+* [`flare==1.3.3b`](https://github.com/mir-group/flare)
 * `ase`
 * `chemiscope`
 * `pandas`
@@ -177,6 +195,5 @@ for thr in [0.10, 0.15, 0.20]:
     deal_cfg.output_prefix = f"run_thr{thr}"
     DEAL(data_cfg, deal_cfg, flare_cfg).run()
 ```
-
 
 

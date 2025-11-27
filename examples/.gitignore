@@ -1,1 +1,4 @@
-**/deal*
+**/*_selected.xyz
+!deal_0.1_selected.xyz
+**/*_chemiscope.json.gz
+!deal_0.1_chemiscope.json.gz

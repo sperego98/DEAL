@@ -1,5 +1,5 @@
 data:
-  files: "input/traj.xyz"            # can be a single value or a list             
+  files: "input/fcu.xyz"            # can be a single value or a list             
   format: extxyz
   index: ":" 
   colvar: colvar/COLVAR                # save collective variables into selected frames for chemiscope

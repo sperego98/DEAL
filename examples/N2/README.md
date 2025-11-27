@@ -10,9 +10,13 @@
 
 ___
 
-#### Structure
+#### Instructions
 
 - **input**
-    - Original trajectory (xyz) from OPES simulation and corresponding COLVAR file (used for monitoring the distribution of CVs)
+    - Copy original trajectory (xyz) from OPES simulation and corresponding COLVAR file (used for monitoring the distribution of CVs)
+    ```
+    cd input 
+    bash get_data.sh 
+    ```
 - **selection**
-    - structures selected by DEAL with different thresholds
+    - pre-process data and run DEAL: [example-N2.ipynb](example-N2.ipynb)
