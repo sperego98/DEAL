@@ -38,6 +38,7 @@ class DEALConfig:
     #  - int >= 1 : explicit number of atoms to add
     #  - float in (0,1) : fraction of atoms to add (relative to system size)
     #  - -1 : no limit (default)
+    # max_atoms_added is ignored with update_style="threshold" (flare problem) --> manually fixed in deal procedure 
     max_atoms_added: Optional[float | int] = -1
     min_steps_with_model: int = 0     # frames between two selections
 
@@ -289,14 +290,16 @@ class DEAL:
             atoms.calc = self.flare_calc
             _ = atoms.get_forces()   # triggers GP eval and stores stds internally
             
+            max_atom_added = self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms)))
             std_in_bound, target_atoms = is_std_in_bound(
                 self.deal_cfg.threshold * -1, # threshold = - std_tolerance_factor
                 self.gp.force_noise,
                 atoms,
-                max_atoms_added=self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms))),
+                max_atoms_added=max_atom_added, # ignored keyword with update_style="threshold" (flare problem)
                 update_style="threshold",
                 update_threshold=self.deal_cfg.update_threshold,
             )
+            target_atoms = target_atoms[-max_atom_added:]  # only keep up to max_atoms_added atoms --> manually enforced here
             self.timers["predict"] += time.perf_counter() - t_pred0
             # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : {std_in_bound} : {target_atoms} : {self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms)))}")
 

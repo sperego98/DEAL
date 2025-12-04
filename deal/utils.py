@@ -249,18 +249,43 @@ def create_chemiscope_input(trajectory, filename = None, colvar = None, cvs=['*'
             try:
                 colvar = load_dataframe(colvar)
 
-                # Check if colvar and trajectory have the same number of frames
-                if len(colvar) == len(traj):
+                # if time in colvar use colvar.time and atoms.info['frame'] to ensure consistency
+                dt, consistent = None, True
+                atoms_old=traj[0]
+                if 'time' in colvar.columns and 'frame' in atoms_old.info: 
+                 # check if time is consistent between colvar and traj
+                    if verbose:
+                        print(f"[INFO] Checking time consistency between COLVAR and trajectory...")
+                    for i, atoms in enumerate(traj[1:]):
+                        if dt is None:
+                            frames = atoms.info['frame'] - atoms_old.info['frame']
+                            time_interval = colvar['time'].loc[atoms.info['frame']] - colvar['time'].loc[atoms_old.info['frame']]
+                            dt= time_interval / frames
+                        else: # check consistency
+                            frames = atoms.info['frame'] - atoms_old.info['frame']
+                            time_interval = colvar['time'].loc[atoms.info['frame']] - colvar['time'].loc[atoms_old.info['frame']]
+                            dt_new= time_interval / frames
+                            if np.abs(dt - dt_new) > 1e-8:
+                                consistent = False
+                        atoms_old= atoms
+                    if consistent:
+                        if verbose:
+                            print(f"[INFO] Time consistency between COLVAR and trajectory verified.")
+                        for i,atoms in enumerate(traj):
+                            for col in colvar.columns:
+                                atoms.info['colvar.'+col] = colvar[col].loc[atoms.info['frame']]
+                    else:
+                        print(f"[WARNING]: time inconsistency between COLVAR and trajectory detected. Not saving COLVAR information.")
+                        for i,atoms in enumerate(traj):
+                            for col in colvar.columns:
+                                atoms.info['colvar.'+col] = colvar[col].iloc[i]
+                elif len(colvar) == len(traj):
+                    print("[WARNING]: Consistency between traj and COLVAR cannot be assessed. Saving COLVAR assuming that the order of frames in COLVAR and trajectory are the same.")
                     for i,atoms in enumerate(traj):
                         for col in colvar.columns:
                             atoms.info['colvar.'+col] = colvar[col].iloc[i]
-
-                else: # check if atoms.info has a step field and retrieve the colvar from that step
-                    for i,atoms in enumerate(traj):
-                        if 'frame' in atoms.info:
-                            for col in colvar.columns:
-                                atoms.info['colvar.'+col] = colvar[col].loc[atoms.info['step']]
-
+                else:
+                    print("[WARNING]: Consistency between traj and COLVAR cannot be assessed and lengths do not match. Not saving COLVAR information.")
             except Exception as e:
                 print (f"[WARNING]: colvar file: {colvar} not read, it should be a string filename or a pandas dataframe. Exception: {e}.")
         
