@@ -9,6 +9,7 @@ import sys
 from pprint import pformat
 import json
 from copy import deepcopy
+import time
 
 from ase.io import iread, write
 from ase.calculators.singlepoint import SinglePointCalculator
@@ -26,15 +27,21 @@ class DataConfig:
     index: str = ":"                 # ASE selection string
     colvar: Optional[List[str]] = None
     shuffle: bool = False 
-    seed: int = 42 
+    seed: int = 24 
 
 @dataclass
 class DEALConfig:
     # --- selection parameters ---
     threshold: float = 1.0
     update_threshold: Optional[float] = None
-    max_atoms_added: int = -1
+    # max_atoms_added can be:
+    #  - int >= 1 : explicit number of atoms to add
+    #  - float in (0,1) : fraction of atoms to add (relative to system size)
+    #  - -1 : no limit (default)
+    max_atoms_added: Optional[float | int] = -1
     min_steps_with_model: int = 0     # frames between two selections
+
+    initial_atoms: Optional[List[int] | float] = None  # atoms to use for initial training (if not provided use 1 per species)
 
     # --- GP training options ---
     force_only: bool = True           # ignore energies/stress if True
@@ -119,10 +126,39 @@ class DEAL:
         # Default update_threshold if not set
         if self.deal_cfg.update_threshold is None:
             self.deal_cfg.update_threshold = 0.8 * self.deal_cfg.threshold
+        
+        # Check max_atoms_added validity
+        if isinstance(self.deal_cfg.max_atoms_added, float):
+            if not (0 < self.deal_cfg.max_atoms_added < 1):
+                # print warning and reset to -1
+                print(f"[WARNING] Invalid max_atoms_added fraction {self.deal_cfg.max_atoms_added}. Resetting to -1 (no limit).")
+                self.deal_cfg.max_atoms_added = -1
+        
+        # Check initial_atoms validity
+        if isinstance(self.deal_cfg.initial_atoms, float):
+            if not (0 < self.deal_cfg.initial_atoms < 1):
+                # print warning and reset to None
+                print(f"[WARNING] Invalid initial_atoms fraction {self.deal_cfg.initial_atoms}. Resetting to None (use 1 per species).")
+                self.deal_cfg.initial_atoms = None
 
         self.selected_frames: List = []
         self.dft_count: int = 0
         self.last_dft_step: int = -10**9   # effectively -∞
+
+        # Timing accumulation
+        self.timers = {
+            "total": 0.0,
+            "extract_dft": 0.0,
+            "predict": 0.0,
+            "update": 0.0,
+            "io_write": 0.0,
+            "other": 0.0,
+        }
+
+        self.rng = np.random.default_rng(self.data_cfg.seed)
+        
+
+
 
     # ------------------------------------------------------------------
     # basic helpers
@@ -156,8 +192,7 @@ class DEAL:
                 frames.append(at)
                 global_idx += 1
 
-        rng = np.random.default_rng(self.data_cfg.seed)
-        rng.shuffle(frames)
+        self.rng.shuffle(frames)
 
         for at in frames:
             yield at
@@ -191,55 +226,88 @@ class DEAL:
 
         return forces, energy, stress
 
-    def _print_progress(self, step: int):
-        msg = f"[DEAL] Examined: {step+1} | Selected: {self.dft_count}"
+    def _print_progress(self, step: int, elapsed: float, step_time: float):
+        msg = f"[DEAL] Examined: {step+1:>5} | Selected: {self.dft_count:>5} | Speed: {step_time:6.2f} s/step | Elapsed: {elapsed:8.2f} s"
         sys.stdout.write("\r" + msg)
         sys.stdout.flush()
 
     # ------------------------------------------------------------------
     # main loop
-    # ------------------------------------------------------------------
-
+    # ------------------------------------------------------------------    
     def run(self) -> None:
+        t_start = time.perf_counter()
         for step, ase_frame in enumerate(self._frames()):
+            step_start = time.perf_counter()
+            int_frame=False
             # 1) DFT labels from original ASE frame
+            t0 = time.perf_counter()
             dft_forces, dft_energy, dft_stress = self._extract_dft(ase_frame)
+            dt = time.perf_counter() - t0
+            self.timers["extract_dft"] += dt
 
             # 2) Convert to FLARE_Atoms for SGP calculations & uncertainties
             atoms = FLARE_Atoms.from_ase_atoms(ase_frame)
+
             # 2a) INITIALIZATION: if GP has no training data, use first frame
             #     to bootstrap the model (no uncertainty check).
             if len(self.gp.training_data) == 0:
+                t_up0 = time.perf_counter()
+                int_frame=True
+                if isinstance(self.deal_cfg.initial_atoms, list):
+                    init_atoms = self.deal_cfg.initial_atoms
+                else:
+                    unique_species = sorted(set(atoms.get_atomic_numbers().tolist()))
+                    idx_species = {sp: [] for sp in unique_species}
+                    for sp in unique_species:
+                        idx_species[sp] = [i for i, at in enumerate(atoms) if at.number == sp] 
+                        self.rng.shuffle(idx_species[sp])  # indices of this species randomly shuffle
+                    
+                    if self.deal_cfg.initial_atoms is None:   # use 1 atom per species
+                        init_atoms = [idx_species[sp][0] for sp in unique_species]
+                    else:   # use fraction of atoms per species
+                        init_atoms = []
+                        for sp in unique_species:
+                            init_atoms += idx_species[sp][:int(np.ceil(self.deal_cfg.initial_atoms * len(idx_species[sp])))]
+                
+                # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Initial atoms selected : {init_atoms}")
                 self._update_gp(
                     atoms=atoms,
-                    train_atoms=list(range(len(atoms))),
+                    train_atoms=init_atoms,
                     dft_frcs=dft_forces,
                     dft_energy=dft_energy,
                     dft_stress=dft_stress,
                 )
-                self.last_dft_step = step
-                self._store_selected_frame(step, ase_frame,
-                                           target_atoms=list(range(len(atoms))))
-                continue
+                self.timers["update"] += time.perf_counter() - t_up0
+
+                # self.last_dft_step = step
+                # self._store_selected_frame(step, ase_frame,
+                #                            target_atoms=init_atoms)
+                # continue
 
             # 3) Predict with SGP and compute uncertainties
+            t_pred0 = time.perf_counter()
             atoms.calc = self.flare_calc
             _ = atoms.get_forces()   # triggers GP eval and stores stds internally
-
+            
             std_in_bound, target_atoms = is_std_in_bound(
                 self.deal_cfg.threshold * -1, # threshold = - std_tolerance_factor
                 self.gp.force_noise,
                 atoms,
-                max_atoms_added=self.deal_cfg.max_atoms_added,
+                max_atoms_added=self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms))),
                 update_style="threshold",
                 update_threshold=self.deal_cfg.update_threshold,
             )
+            self.timers["predict"] += time.perf_counter() - t_pred0
+            # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : {std_in_bound} : {target_atoms} : {self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms)))}")
 
             steps_since_last = step - self.last_dft_step
+            
             if (not std_in_bound) and (steps_since_last >= self.deal_cfg.min_steps_with_model):
                 # Select this frame & update GP
+                t_up0 = time.perf_counter()
                 self.last_dft_step = step
-                self._store_selected_frame(step, ase_frame, target_atoms)
+                self._store_selected_frame(step, ase_frame, target_atoms+init_atoms if int_frame else target_atoms)
+                # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Atoms selected : {target_atoms+init_atoms if int_frame else target_atoms}")
                 self._update_gp(
                     atoms=atoms,
                     train_atoms=list(target_atoms),
@@ -247,9 +315,15 @@ class DEAL:
                     dft_energy=dft_energy,
                     dft_stress=dft_stress,
                 )
-            
+                self.timers["update"] += time.perf_counter() - t_up0
+            elif std_in_bound and int_frame:# In initial frame case, store selected frame even if stds are okay 
+                self.last_dft_step = step
+                self._store_selected_frame(step, ase_frame,
+                                        target_atoms=init_atoms)
             # ========== print progress ==========
-            self._print_progress(step)
+            elapsed = time.perf_counter() - t_start
+            step_time = time.perf_counter() - step_start
+            self._print_progress(step, elapsed, step_time)
 
         # newline so terminal prompt doesn't collide with progress line
         print('')
@@ -258,26 +332,52 @@ class DEAL:
         # outputs
         # ------------------------------------------------------------------
         if self.selected_frames:
+            t_io0 = time.perf_counter()
             out_xyz = f"{self.deal_cfg.output_prefix}_selected.xyz"
             write(out_xyz, self.selected_frames)
+            self.timers["io_write"] += time.perf_counter() - t_io0
+
             if self.deal_cfg.verbose:
                 print(f"[OUTPUT] Saved selected frames to: {out_xyz}\n")
             try:
+                t_io0 = time.perf_counter()
                 create_chemiscope_input(
                     trajectory=out_xyz,
                     filename=f"{self.deal_cfg.output_prefix}_chemiscope.json.gz",
                     colvar=self.data_cfg.colvar, 
                     verbose=self.deal_cfg.verbose
                 )
+                self.timers["io_write"] += time.perf_counter() - t_io0
             except Exception as exc:
                 print(f"[WARNING] Could not write chemiscope file: {exc}")
 
             if self.deal_cfg.save_gp:
                 # Save final SGP model
+                t_io0 = time.perf_counter()
                 self.flare_calc.write_model(f"{self.deal_cfg.output_prefix}_flare.json")
+                self.timers["io_write"] += time.perf_counter() - t_io0
                 if self.deal_cfg.verbose:
                     print(f"[OUTPUT] Saved GP model to {self.deal_cfg.output_prefix}_flare.json")
-            
+        
+        # final total time
+
+        self.timers["total"] = time.perf_counter() - t_start
+
+        if self.deal_cfg.verbose:
+            total = self.timers["total"]
+            extract = self.timers["extract_dft"]
+            pred = self.timers["predict"]
+            upd = self.timers["update"]
+            iow = self.timers["io_write"]
+            oth = max(0.0, total - (extract + pred + upd + iow))
+            self.timers["other"] = oth
+            print("\n[TIMING] Summary (s):")
+            print(f"  total           : {total:8.2f}")
+            print(f"    extract_dft   : {extract:8.2f} ({extract/total*100:4.1f}%)")
+            print(f"    predict       : {pred:8.2f} ({pred/total*100:4.1f}%)")
+            print(f"    update        : {upd:8.2f} ({upd/total*100:4.1f}%)")
+            print(f"    io_write      : {iow:8.2f} ({iow/total*100:4.1f}%)")
+            print(f"    other         : {oth:8.2f} ({oth/total*100:4.1f}%)")
 
     # ------------------------------------------------------------------
     # GP creation and update
@@ -490,5 +590,3 @@ class DEAL:
         # Train hyperparameters
         if self.deal_cfg.train_hyps:
             self.gp.train(logger_name=None)
-
-
