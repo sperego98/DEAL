@@ -126,25 +126,26 @@ deal -c input.yaml
 
 ```yaml
 data:
-  files: ["traj.xyz"]
-  format: "extxyz"
-  index: ":"
-  shuffle: False
+  files: ["traj.xyz"]     # can be a single file or a list of files
+  format: "extxyz"        # file format (e.g. extxyz, xyz, ...)
+  index: ":"              # frame selection (e.g. ":", "0:100", [0,10,20]) [see ASE notation]
+  colvar: "COLVAR"        # collective variables file associated with the trajectory (optional, used for monitoring CVs in chemiscope)
+  shuffle: False          # whether to shuffle the frames before processing (suggested true for MD data)
   seed: 42
 
 deal:
-  threshold: 0.1
-  update_threshold: 0.08        
-  max_atoms_added: -1           
-  min_steps_with_model: 0
-  output_prefix: deal
+  threshold: 0.1         #can be a single value or a list of values
+  update_threshold: 0.08 # if not set it is chosen as 0.8 * threshold 
+  max_atoms_added: 0.15  # limit the number of selected environments added per configuration (can be int (number of atoms) or float (0,1) (fraction of total atoms). Default: -1 (no limit)
+  initial_atoms: 0.2     # use up to 20% of the atoms of each species for GP initialization
+  output_prefix: deal    # prefix for output files (threshold will be appended as suffix)
   force_only: true
-  train_hyps: false
-  verbose: true
+  train_hyps: false      # whether to re-train hyperparameters at each iteration (slower) 
+  verbose: true          # allowed values: true/false/"debug" (default: false)
   save_gp: false
 
 flare_calc:
-  gp: SGP_Wrapper
+  gp: SGP_Wrapper        # (see flare's documentation)
   kernels:
     - name: NormalizedDotProduct
       sigma: 2 
@@ -167,7 +168,7 @@ from deal import DataConfig, DEALConfig, FlareConfig, DEAL
 # Define Config (uses defaults where not provided)
 data_cfg = DataConfig(files="traj.xyz")
 deal_cfg = DEALConfig(
-    threshold=0.15,
+    threshold=0.1,
     output_prefix="deal",    
 )
 flare_cfg = FlareConfig()
@@ -187,7 +188,7 @@ In both cases the following files (with the default `output_prefix=deal`):
 1. **`deal_selected.xyz` – selected frames** 
 
 Contains the atomic configurations where the GP uncertainty exceeded the threshold.
-Includes atoms.info["step"] indicating the original trajectory index.
+Includes atoms.info["frame"] indicating the original trajectory index.
 
 2. **`deal_chemiscope.json.gz` – chemiscope visualization file**
 
@@ -200,6 +201,14 @@ chemiscope.show_input('deal_chemiscope.json.gz')
 ### Multiple thresholds
 
 If the CLI receives a list of thresholds, DEAL will run once per threshold.
+```yaml
+deal:
+  threshold:
+    - 0.10
+    - 0.15
+    - 0.20
+```
+
 Equivalent behaviour in Python:
 
 ```python
@@ -229,7 +238,8 @@ Local environments are characterized via the Atomic Cluster Expansion formalism 
 ```yaml
   threshold: 0.1
   update_threshold: 0.08  # if not set it is chosen as 0.8 * threshold      
-  max_atoms_added: -1 # no limit on the number of selected environment of a given configuration to the GP    
+  max_atoms_added: -1 # no limit on the number of selected environment of a given configuration to the GP.
+  initial_atoms: 0.15 # use up to 15% of the atoms (of each species) for GP initialization
 ```      
 
 The`threshold` parameter in the DEAL configuration controls when a local environment is flagged by the SGP’s predictive variance (normalized by the noise hyperparameter). If any environment exceeds the threshold, the GP is updated and that environment (plus any others above `update_threshold * threshold`, up to `max_atoms_added`) is added. 

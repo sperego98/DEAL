@@ -50,8 +50,9 @@ class DEALConfig:
 
     # --- output ---
     output_prefix: str = "deal"
-    verbose: bool = False
+    verbose: bool | str = False       # allowed values: true/false/"debug" (default: false)
     save_gp: bool = False
+    debug: bool = False              # internal debug flag
 
 @dataclass
 class FlareConfig:
@@ -146,6 +147,12 @@ class DEAL:
         self.dft_count: int = 0
         self.last_dft_step: int = -10**9   # effectively -∞
 
+        if isinstance(self.deal_cfg.verbose, str):
+            if self.deal_cfg.verbose in ["debug", "DEBUG", "Debug"]:
+                self.deal_cfg.verbose = True
+                self.deal_cfg.debug = True
+
+
         # Timing accumulation
         self.timers = {
             "total": 0.0,
@@ -157,9 +164,7 @@ class DEAL:
         }
 
         self.rng = np.random.default_rng(self.data_cfg.seed)
-        
-
-
+    
 
     # ------------------------------------------------------------------
     # basic helpers
@@ -269,8 +274,8 @@ class DEAL:
                         init_atoms = []
                         for sp in unique_species:
                             init_atoms += idx_species[sp][:int(np.ceil(self.deal_cfg.initial_atoms * len(idx_species[sp])))]
-                
-                # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Initial atoms selected : {init_atoms}")
+                if self.deal_cfg.debug:
+                    sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Initial atoms selected : {init_atoms}")
                 self._update_gp(
                     atoms=atoms,
                     train_atoms=init_atoms,
@@ -279,11 +284,6 @@ class DEAL:
                     dft_stress=dft_stress,
                 )
                 self.timers["update"] += time.perf_counter() - t_up0
-
-                # self.last_dft_step = step
-                # self._store_selected_frame(step, ase_frame,
-                #                            target_atoms=init_atoms)
-                # continue
 
             # 3) Predict with SGP and compute uncertainties
             t_pred0 = time.perf_counter()
@@ -301,7 +301,8 @@ class DEAL:
             )
             target_atoms = target_atoms[-max_atom_added:]  # only keep up to max_atoms_added atoms --> manually enforced here
             self.timers["predict"] += time.perf_counter() - t_pred0
-            # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : {std_in_bound} : {target_atoms} : {self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms)))}")
+            if self.deal_cfg.debug:
+                sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : {std_in_bound} : {target_atoms} : {self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms)))}")
 
             steps_since_last = step - self.last_dft_step
             
@@ -310,7 +311,8 @@ class DEAL:
                 t_up0 = time.perf_counter()
                 self.last_dft_step = step
                 self._store_selected_frame(step, ase_frame, target_atoms+init_atoms if int_frame else target_atoms)
-                # sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Atoms selected : {target_atoms+init_atoms if int_frame else target_atoms}")
+                if self.deal_cfg.debug:
+                    sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Atoms selected : {target_atoms+init_atoms if int_frame else target_atoms}")
                 self._update_gp(
                     atoms=atoms,
                     train_atoms=list(target_atoms),

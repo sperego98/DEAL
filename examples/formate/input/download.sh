@@ -1,1 +1,1 @@
-wget https://archive.materialscloud.org/records/ycbvx-knj69/files/fcu.xyz?download=1
+wget https://archive.materialscloud.org/records/ycbvx-knj69/files/fcu.xyz

@@ -1,8 +1,9 @@
 data:
-  files: "input/fcu.xyz"            # can be a single value or a list             
-  format: extxyz
-  index: ":" 
-  colvar: colvar/COLVAR                # save collective variables into selected frames for chemiscope
+  files: "input/fcu.xyz"       # can be a single value or a list             
+  format: extxyz               # format of the input file
+  index: ":"                   # frames to consider during file reading (see ASE notation)  
+  colvar: colvar/COLVAR        # save collective variables into selected frames for chemiscope
+  shuffle: true                # shuffle the data before selection -> useful to de-correlate frames if they come from a MD trajectory
 
 deal:
   threshold:                   # can be a single value or a list 
@@ -10,12 +11,12 @@ deal:
   - 0.10
   - 0.15
   - 0.20
-  max_atoms_added: 1           
-  min_steps_with_model: 0
-  output_prefix: "selection/deal" 
-  force_only: true
-  train_hyps: false
-  verbose: true
+  max_atoms_added: 0.15        # can be int (number of atoms) or float (0,1) (fraction of total atoms). Default: -1 (no limit)
+  initial_atoms: 0.2           # use up to 20% of the atoms of each species for GP initialization
+  output_prefix: "selection/deal_shuffle"   # prefix for output files (threshold will be appended as suffix)
+  force_only: true    
+  train_hyps: false            # whether to re-train hyperparameters at each iteration (slower) 
+  verbose: true                # allowed values: true/false/"debug" (default: false)
   save_gp: false
 
 flare:
