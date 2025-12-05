@@ -5,7 +5,6 @@
     1. Filter the structures based on GP predictive variance. 
     2. Visualize the selected structures with chemiscope.
 
-
 ___ 
 
 ### INSTRUCTION
@@ -30,15 +29,9 @@ cd ..
 Run DEAL with different thresholds and visualize structures
 ```bash
 deal -c input.yaml
-``` 
+```
 Consider running it on a HPC cluster or on a large-memory machine.
 An example SLURM script to run DEAL on Daint@Alps-CSCS HPC system is provdied for [`N2 example`](../N2/README.md).
-
-#### Copy results (optional)
-If you don't want to run DEAL, you can copy the results from the [`examples-results/formate/selection/`](examples-results/formate/selection/) folder.
-```bash
-cp -r ../../examples-results/formate/selection selection
-```
 
 #### Analyze results
 The selection can be analyzed with the jupyter notebook [`analyse_results.ipynb`](`analyse_results.ipynb`).
