@@ -18,7 +18,7 @@ deal:
   output_prefix: deal
   force_only: true
   train_hyps: false
-  verbose: true
+  verbose: debug
   save_gp: false
 
 flare:

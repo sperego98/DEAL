@@ -5,33 +5,38 @@
     1. Filter the structures based on GP predictive variance. 
     2. Visualize the selected structures with chemiscope.
 
-
 ___ 
 
-#### Instructions
+### INSTRUCTION
 
-- **input**
-    - Get trajectory (xyz) from supporting data 
-    ```
-    cd input 
-    bash download.sh
-    ```
-- **colvar**
-    - (optional) evaluate relevant CVs (e.g. coordination numbers) using PLUMED
+#### Input
+Get trajectory (xyz) from supporting data 
+```bash
+cd input 
+bash download.sh
+cd ..
+```
 
-    ```
-    cd colvar
-    plumed driver --plumed plumed.dat --ixyz ../input/fcu.xyz --length-units A --box 10.638,10.03,30.0
-    ```
-- **selection**
-    - Run DEAL with different thresholds and visualize structures
+#### Colvar (optional)
+Evaluate relevant CVs (e.g. coordination numbers) using PLUMED
+```bash
+cd colvar
+plumed driver --plumed plumed.dat --ixyz ../input/fcu.xyz --length-units A --box 10.638,10.03,30.0
+cd ..
+```
 
-    ```
-    cd selection
-    deal -c input.yaml
-    ``` 
-    (consider running it on a HPC cluster or on a large-memory machine)
+#### Selection
+Run DEAL with different thresholds and visualize structures
+```bash
+deal -c input.yaml
+```
+Consider running it on a HPC cluster or on a large-memory machine.
+An example SLURM script to run DEAL on Daint@Alps-CSCS HPC system is provdied for [`N2 example`](../N2/README.md).
 
-    The selection can be analyzed with the jupyter notebook [`analyze_and_view.ipynb`](`selection/analyze_and_view.ipynb`).
-    
+#### Analyze results
+The selection can be analyzed with the jupyter notebook [`analyse_results.ipynb`](`analyse_results.ipynb`).
+
+The results `*_chemiscope.json.gz` can also be directly visualized online at https://chemiscope.org/
+
+
 

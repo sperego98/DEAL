@@ -15,7 +15,7 @@ for deal_threshold in deal_thresholds:
     deal_cfg = DEALConfig(
         threshold=deal_threshold,
         output_prefix=output_prefix,
-        verbose=True,
+        verbose='debug',
     )
 
     flare_cfg = FlareConfig(cutoff=cutoff)
