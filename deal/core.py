@@ -60,40 +60,45 @@ class DEALConfig:
     debug: bool = False              # internal debug flag
 
     # --- Validation of parameters ---
-    # Default update_threshold if not set
-    if update_threshold is None:
-        update_threshold = 0.8 * threshold
-    
-    # Check max_atoms_added validity
-    if isinstance(max_atoms_added, int):
-        if max_atoms_added == 0 or max_atoms_added < -1:
-            # print warning and reset to -1
-            print(f"[WARNING] Invalid value for max_atoms_added '{max_atoms_added}'. Resetting to '-1' (no limit).")
-            max_atoms_added = -1
-    if isinstance(max_atoms_added, float):
-        if not (0 < max_atoms_added < 1):
-            max_atoms_added = int(max_atoms_added) # cast to int
-            if max_atoms_added <=0:
-                # print warning and reset to -1
-                print(f"[WARNING] Invalid max_atoms_added fraction. Resetting to '-1' (no limit).")
-                max_atoms_added = -1
-            else:
-                print(f"[WARNING] Invalid fraction of max_atoms_added. Casting to int '{max_atoms_added}'.")
-    
-    # Check initial_atoms validity
-    if isinstance(initial_atoms, float):
-        if not (0 < initial_atoms < 1):
-            # print warning and reset to None
-            print(f"[WARNING] Invalid initial_atoms fraction '{initial_atoms}'. Resetting to None (use 1 per species).")
-            initial_atoms = None
+    def __post_init__(self):
+        # --- Default update_threshold ---
+        if self.update_threshold is None:
+            self.update_threshold = 0.8 * self.threshold
 
-    if isinstance(verbose, str):
-        if verbose in ["debug", "DEBUG", "Debug"]:
-            verbose = True
-            debug = True
-        else:
-            print(f"[WARNING] Invalid verbose option '{verbose}'. Setting verbose to False.")
-            verbose = False
+        # --- Check max_atoms_added ---
+        if isinstance(self.max_atoms_added, int):
+            if self.max_atoms_added == 0 or self.max_atoms_added < -1:
+                print(
+                    f"[WARNING] Invalid value for max_atoms_added "
+                    f"'{self.max_atoms_added}'. Resetting to '-1' (no limit)."
+                )
+                self.max_atoms_added = -1
+
+        elif isinstance(self.max_atoms_added, float):
+            if not (0 < self.max_atoms_added < 1):
+                # cast to int
+                self.max_atoms_added = int(self.max_atoms_added)
+                if self.max_atoms_added <= 0:
+                    print(f"[WARNING] Invalid max_atoms_added fraction. Resetting to '-1' (no limit).")
+                    self.max_atoms_added = -1
+                else:
+                    print(f"[WARNING] Invalid fraction of max_atoms_added. Casting to int '{self.max_atoms_added}'.")   
+
+        # --- Check initial_atoms validity ---
+        if isinstance(self.initial_atoms, float):
+            if not (0 < self.initial_atoms < 1):
+                print(f"[WARNING] Invalid initial_atoms fraction '{self.initial_atoms}'. Resetting to None (use 1 per species).")
+                self.initial_atoms = None
+
+        # --- Handle verbose/debug logic ---
+        if isinstance(self.verbose, str):
+            if self.verbose.lower() == "debug":
+                self.verbose = True
+                self.debug = True
+            else:
+                print(f"[WARNING] Invalid verbose option '{self.verbose}'. Setting verbose to False.")
+                self.verbose = False
+
 @dataclass
 class FlareConfig:
     # --- gp ---
@@ -274,6 +279,8 @@ class DEAL:
             if len(self.gp.training_data) == 0:
                 t_up0 = time.perf_counter()
                 int_frame=True
+                if self.deal_cfg.debug:
+                    sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Initializing GP with first frame\n")
                 if isinstance(self.deal_cfg.initial_atoms, list):
                     init_atoms = self.deal_cfg.initial_atoms
                 else:
