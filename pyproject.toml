@@ -20,6 +20,7 @@ dependencies = [
     "ase",
     "pandas",
     "chemiscope",
+    "ipykernel",
 ]
 
 [project.urls]

@@ -87,10 +87,6 @@ git clone https://github.com/luigibonati/DEAL.git
 cd DEAL
 pip install .
 ```
-optional: install ipykernel to run example notebooks
-```
-pip install ipykernel
-```
 
 
 

@@ -34,15 +34,20 @@ class DEALConfig:
     # --- selection parameters ---
     threshold: float = 1.0
     update_threshold: Optional[float] = None
+    
+    max_atoms_added: Optional[float | int] = -1
     # max_atoms_added can be:
     #  - int >= 1 : explicit number of atoms to add
     #  - float in (0,1) : fraction of atoms to add (relative to system size)
     #  - -1 : no limit (default)
-    # max_atoms_added is ignored with update_style="threshold" (flare problem) --> manually fixed in deal procedure 
-    max_atoms_added: Optional[float | int] = -1
+    #     
     min_steps_with_model: int = 0     # frames between two selections
 
-    initial_atoms: Optional[List[int] | float] = None  # atoms to use for initial training (if not provided use 1 per species)
+    initial_atoms: Optional[List[int] | float] = None  
+    # atoms to use for initial training. Allowed values:
+    #   - list of atom indices 
+    #   - float in (0,1) : fraction of atoms (computed per species)
+    #   - None (use 1 atom per species)
 
     # --- GP training options ---
     force_only: bool = True           # ignore energies/stress if True
@@ -54,6 +59,41 @@ class DEALConfig:
     save_gp: bool = False
     debug: bool = False              # internal debug flag
 
+    # --- Validation of parameters ---
+    # Default update_threshold if not set
+    if update_threshold is None:
+        update_threshold = 0.8 * threshold
+    
+    # Check max_atoms_added validity
+    if isinstance(max_atoms_added, int):
+        if max_atoms_added == 0 or max_atoms_added < -1:
+            # print warning and reset to -1
+            print(f"[WARNING] Invalid value for max_atoms_added '{max_atoms_added}'. Resetting to '-1' (no limit).")
+            max_atoms_added = -1
+    if isinstance(max_atoms_added, float):
+        if not (0 < max_atoms_added < 1):
+            max_atoms_added = int(max_atoms_added) # cast to int
+            if max_atoms_added <=0:
+                # print warning and reset to -1
+                print(f"[WARNING] Invalid max_atoms_added fraction. Resetting to '-1' (no limit).")
+                max_atoms_added = -1
+            else:
+                print(f"[WARNING] Invalid fraction of max_atoms_added. Casting to int '{max_atoms_added}'.")
+    
+    # Check initial_atoms validity
+    if isinstance(initial_atoms, float):
+        if not (0 < initial_atoms < 1):
+            # print warning and reset to None
+            print(f"[WARNING] Invalid initial_atoms fraction '{initial_atoms}'. Resetting to None (use 1 per species).")
+            initial_atoms = None
+
+    if isinstance(verbose, str):
+        if verbose in ["debug", "DEBUG", "Debug"]:
+            verbose = True
+            debug = True
+        else:
+            print(f"[WARNING] Invalid verbose option '{verbose}'. Setting verbose to False.")
+            verbose = False
 @dataclass
 class FlareConfig:
     # --- gp ---
@@ -125,33 +165,9 @@ class DEAL:
         self.flare_calc, self.kernels = self._get_sgp_calc(asdict(self.flare_cfg))
         self.gp = self.flare_calc.gp_model
 
-        # Default update_threshold if not set
-        if self.deal_cfg.update_threshold is None:
-            self.deal_cfg.update_threshold = 0.8 * self.deal_cfg.threshold
-        
-        # Check max_atoms_added validity
-        if isinstance(self.deal_cfg.max_atoms_added, float):
-            if not (0 < self.deal_cfg.max_atoms_added < 1):
-                # print warning and reset to -1
-                print(f"[WARNING] Invalid max_atoms_added fraction {self.deal_cfg.max_atoms_added}. Resetting to -1 (no limit).")
-                self.deal_cfg.max_atoms_added = -1
-        
-        # Check initial_atoms validity
-        if isinstance(self.deal_cfg.initial_atoms, float):
-            if not (0 < self.deal_cfg.initial_atoms < 1):
-                # print warning and reset to None
-                print(f"[WARNING] Invalid initial_atoms fraction {self.deal_cfg.initial_atoms}. Resetting to None (use 1 per species).")
-                self.deal_cfg.initial_atoms = None
-
         self.selected_frames: List = []
         self.dft_count: int = 0
         self.last_dft_step: int = -10**9   # effectively -∞
-
-        if isinstance(self.deal_cfg.verbose, str):
-            if self.deal_cfg.verbose in ["debug", "DEBUG", "Debug"]:
-                self.deal_cfg.verbose = True
-                self.deal_cfg.debug = True
-
 
         # Timing accumulation
         self.timers = {
@@ -165,7 +181,6 @@ class DEAL:
 
         self.rng = np.random.default_rng(self.data_cfg.seed)
     
-
     # ------------------------------------------------------------------
     # basic helpers
     # ------------------------------------------------------------------
@@ -299,7 +314,8 @@ class DEAL:
                 update_style="threshold",
                 update_threshold=self.deal_cfg.update_threshold,
             )
-            target_atoms = target_atoms[-max_atom_added:]  # only keep up to max_atoms_added atoms --> manually enforced here
+            if ( 0 < max_atom_added < len(target_atoms) ): # only keep up to max_atoms_added atoms --> manually enforced here
+                target_atoms = target_atoms[-max_atom_added:]  
             self.timers["predict"] += time.perf_counter() - t_pred0
             if self.deal_cfg.debug:
                 sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : {std_in_bound} : {target_atoms} : {self.deal_cfg.max_atoms_added if isinstance(self.deal_cfg.max_atoms_added, int) else int(np.ceil(self.deal_cfg.max_atoms_added * len(atoms)))}")
