@@ -16,10 +16,10 @@ The method is described in:
 * Select structures based on SGP predictive variance. 
 * Analyze selected structures (e.g. along the trajectory or as a function of a CV)
 
-    <img src="examples/formate/imgs/analysis.png" alt="drawing" width="824"/>
+    <img src="examples/2_subsampling_formate/imgs/analysis.png" alt="drawing" width="824"/>
 * Interactive visualization using [chemiscope](https://chemiscope.org/)
 
-    <a href="https://chemiscope.org/?load=https://raw.githubusercontent.com/luigibonati/DEAL/refs/heads/main/examples/formate/selection/deal_0.1_chemiscope.json.gz"> <img src="examples/formate/imgs/chemiscope-viewer.png" alt="drawing" width="412"></a>
+    <a href="https://chemiscope.org/?load=https://raw.githubusercontent.com/luigibonati/DEAL/refs/heads/main/examples/2_subsampling_formate/selection/deal_0.1_chemiscope.json.gz"> <img src="examples/2_subsampling_formate/imgs/chemiscope-viewer.png" alt="drawing" width="412"></a>
 
 ---
 
