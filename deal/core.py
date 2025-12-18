@@ -55,7 +55,7 @@ class DEALConfig:
 
     # --- output ---
     output_prefix: str = "deal"
-    verbose: bool | str = False       # allowed values: true/false/"debug" (default: false)
+    verbose: bool | str = True       # allowed values: true/false/"debug" (default: false)
     save_gp: bool = False
     debug: bool = False              # internal debug flag
 

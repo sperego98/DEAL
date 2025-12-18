@@ -143,7 +143,7 @@ deal:
   output_prefix: deal    # prefix for output files (threshold will be appended as suffix)
   force_only: true
   train_hyps: false      # whether to re-train hyperparameters at each iteration (slower) 
-  verbose: true          # allowed values: true/false/"debug" (default: false)
+  verbose: true          # allowed values: true/false/"debug" (default: true)
   save_gp: false
 
 flare_calc:
@@ -159,6 +159,7 @@ flare_calc:
       cutoff_function: cosine
       radial_basis: chebyshev
   cutoff: 4.5
+  
 ```
 One can also use a base config file and override via CLI the options:
 ```bash
