@@ -74,9 +74,10 @@ def main() -> None:
     # Handle multiple thresholds
     if isinstance(deal_cfg.threshold, list):
         prefix = deal_cfg.output_prefix
-        for threshold in deal_cfg.threshold:
+        for threshold, update_thresh in zip(deal_cfg.threshold, deal_cfg.update_threshold):
             print('[DEAL] Running with threshold:', threshold)
             deal_cfg.threshold = threshold
+            deal_cfg.update_threshold = update_thresh
             deal_cfg.output_prefix = f"{prefix}_{str(threshold)}"
             DEAL(data_cfg, deal_cfg, flare_cfg).run()
     else:

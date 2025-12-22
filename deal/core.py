@@ -33,7 +33,7 @@ class DataConfig:
 class DEALConfig:
     # --- selection parameters ---
     threshold: float = 1.0
-    update_threshold: Optional[float] = None
+    update_threshold: Optional[float | List[float]] = None
     
     max_atoms_added: Optional[float | int] = 0.2
     # max_atoms_added can be:
@@ -63,7 +63,25 @@ class DEALConfig:
     def __post_init__(self):
         # --- Default update_threshold ---
         if self.update_threshold is None:
-            self.update_threshold = 0.8 * self.threshold
+            if isinstance(self.threshold, list):
+                # If threshold is a list, compute update_threshold as list too
+                self.update_threshold = [0.8 * t for t in self.threshold]
+            else:
+                self.update_threshold = 0.8 * self.threshold
+        
+        # --- Check that threshold and update_threshold lists match in length ---
+        if isinstance(self.threshold, list) and isinstance(self.update_threshold, list):
+            if len(self.threshold) != len(self.update_threshold):
+                raise ValueError(
+                    f"Length of 'threshold' list ({len(self.threshold)}) must match "
+                    f"length of 'update_threshold' list ({len(self.update_threshold)})"
+                )
+        if isinstance(self.threshold, list) and isinstance(self.update_threshold, float):
+            self.update_threshold = [self.update_threshold for _ in self.threshold]
+            print(f"[WARNING] 'update_threshold' was a float while 'threshold' was a list. "
+                  f"Converted 'update_threshold' to list: {self.update_threshold}"
+                  )
+    
 
         # --- Check max_atoms_added ---
         if isinstance(self.max_atoms_added, int):
