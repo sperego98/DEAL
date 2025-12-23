@@ -33,13 +33,13 @@ class DataConfig:
 class DEALConfig:
     # --- selection parameters ---
     threshold: float = 1.0
-    update_threshold: Optional[float] = None
+    update_threshold: Optional[float | List[float]] = None
     
-    max_atoms_added: Optional[float | int] = -1
+    max_atoms_added: Optional[float | int] = 0.2
     # max_atoms_added can be:
     #  - int >= 1 : explicit number of atoms to add
     #  - float in (0,1) : fraction of atoms to add (relative to system size)
-    #  - -1 : no limit (default)
+    #  - -1 : no limit 
     #     
     min_steps_with_model: int = 0     # frames between two selections
 
@@ -55,7 +55,7 @@ class DEALConfig:
 
     # --- output ---
     output_prefix: str = "deal"
-    verbose: bool | str = False       # allowed values: true/false/"debug" (default: false)
+    verbose: bool | str = True       # allowed values: true/false/"debug" (default: false)
     save_gp: bool = False
     debug: bool = False              # internal debug flag
 
@@ -63,7 +63,25 @@ class DEALConfig:
     def __post_init__(self):
         # --- Default update_threshold ---
         if self.update_threshold is None:
-            self.update_threshold = 0.8 * self.threshold
+            if isinstance(self.threshold, list):
+                # If threshold is a list, compute update_threshold as list too
+                self.update_threshold = [0.8 * t for t in self.threshold]
+            else:
+                self.update_threshold = 0.8 * self.threshold
+        
+        # --- Check that threshold and update_threshold lists match in length ---
+        if isinstance(self.threshold, list) and isinstance(self.update_threshold, list):
+            if len(self.threshold) != len(self.update_threshold):
+                raise ValueError(
+                    f"Length of 'threshold' list ({len(self.threshold)}) must match "
+                    f"length of 'update_threshold' list ({len(self.update_threshold)})"
+                )
+        if isinstance(self.threshold, list) and isinstance(self.update_threshold, float):
+            self.update_threshold = [self.update_threshold for _ in self.threshold]
+            print(f"[WARNING] 'update_threshold' was a float while 'threshold' was a list. "
+                  f"Converted 'update_threshold' to list: {self.update_threshold}"
+                  )
+    
 
         # --- Check max_atoms_added ---
         if isinstance(self.max_atoms_added, int):
@@ -264,7 +282,7 @@ class DEAL:
         t_start = time.perf_counter()
         for step, ase_frame in enumerate(self._frames()):
             step_start = time.perf_counter()
-            int_frame=False
+            init_frame=False
             # 1) DFT labels from original ASE frame
             t0 = time.perf_counter()
             dft_forces, dft_energy, dft_stress = self._extract_dft(ase_frame)
@@ -278,7 +296,7 @@ class DEAL:
             #     to bootstrap the model (no uncertainty check).
             if len(self.gp.training_data) == 0:
                 t_up0 = time.perf_counter()
-                int_frame=True
+                init_frame=True
                 if self.deal_cfg.debug:
                     sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Initializing GP with first frame\n")
                 if isinstance(self.deal_cfg.initial_atoms, list):
@@ -317,11 +335,10 @@ class DEAL:
                 self.deal_cfg.threshold * -1, # threshold = - std_tolerance_factor
                 self.gp.force_noise,
                 atoms,
-                max_atoms_added=max_atom_added, # ignored keyword with update_style="threshold" (flare problem)
                 update_style="threshold",
                 update_threshold=self.deal_cfg.update_threshold,
             )
-            if ( 0 < max_atom_added < len(target_atoms) ): # only keep up to max_atoms_added atoms --> manually enforced here
+            if ( 0 < max_atom_added < len(target_atoms) ): # only keep up to max_atoms_added atoms
                 target_atoms = target_atoms[-max_atom_added:]  
             self.timers["predict"] += time.perf_counter() - t_pred0
             if self.deal_cfg.debug:
@@ -333,9 +350,9 @@ class DEAL:
                 # Select this frame & update GP
                 t_up0 = time.perf_counter()
                 self.last_dft_step = step
-                self._store_selected_frame(step, ase_frame, target_atoms+init_atoms if int_frame else target_atoms)
+                self._store_selected_frame(step, ase_frame, target_atoms+init_atoms if init_frame else target_atoms)
                 if self.deal_cfg.debug:
-                    sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Atoms selected : {target_atoms+init_atoms if int_frame else target_atoms}")
+                    sys.stdout.write('\r' + f"[DEBUG] : step {step+1} : Atoms selected : {target_atoms+init_atoms if init_frame else target_atoms}")
                 self._update_gp(
                     atoms=atoms,
                     train_atoms=list(target_atoms),
@@ -344,7 +361,7 @@ class DEAL:
                     dft_stress=dft_stress,
                 )
                 self.timers["update"] += time.perf_counter() - t_up0
-            elif std_in_bound and int_frame:# In initial frame case, store selected frame even if stds are okay 
+            elif std_in_bound and init_frame:# In initial frame case, store selected frame even if stds are okay 
                 self.last_dft_step = step
                 self._store_selected_frame(step, ase_frame,
                                         target_atoms=init_atoms)

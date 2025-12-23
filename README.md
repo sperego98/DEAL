@@ -4,6 +4,10 @@
 
 DEAL selects non-redundant structures from atomistic trajectories via Sparse Gaussian Processes (SGP), to be used to train machine-learning interatomic potentials.
 
+It consists of two steps:
+1. preselection using the MLP uncertainty (e.g. max uncertainty obtained with query-by-committee)
+2. select a dataset of non-redundant configurations using the local predictive variance of a Gaussian Process
+
 The method is described in:
 
 > **Perego S. & Bonati L.**
@@ -11,15 +15,17 @@ The method is described in:
 > **npj Computational Materials 10, 291 (2024)**
 > doi: [10.1038/s41524-024-01481-6](https://doi.org/10.1038/s41524-024-01481-6)
 
+In addition, step 2. can be also used to perform subsampling of a trajectory even without the uncertainty pre-selection (see [examples](examples/README.md))
+
 ## Highlights
 
 * Select structures based on SGP predictive variance. 
 * Analyze selected structures (e.g. along the trajectory or as a function of a CV)
 
-    <img src="examples/formate/imgs/analysis.png" alt="drawing" width="824"/>
+    <img src="examples/2_subsampling_formate/imgs/analysis.png" alt="drawing" width="824"/>
 * Interactive visualization using [chemiscope](https://chemiscope.org/)
 
-    <a href="https://chemiscope.org/?load=https://raw.githubusercontent.com/luigibonati/DEAL/refs/heads/main/examples/formate/selection/deal_0.1_chemiscope.json.gz"> <img src="examples/formate/imgs/chemiscope-viewer.png" alt="drawing" width="412"></a>
+    <a href="https://chemiscope.org/?load=https://raw.githubusercontent.com/luigibonati/DEAL/refs/heads/main/examples/2_subsampling_formate/selection/deal_0.1_chemiscope.json.gz"> <img src="examples/2_subsampling_formate/imgs/chemiscope-viewer.png" alt="drawing" width="412"></a>
 
 ---
 
@@ -114,7 +120,7 @@ DEAL will automatically:
 
 ### 📄 With a YAML config file
 
-For more customization you can create an `input.yaml` file:
+For more customization you can create an `input.yaml` file (below are the default):
 
 ```bash
 deal -c input.yaml
@@ -125,19 +131,19 @@ data:
   files: ["traj.xyz"]     # can be a single file or a list of files
   format: "extxyz"        # file format (e.g. extxyz, xyz, ...)
   index: ":"              # frame selection (e.g. ":", "0:100", [0,10,20]) [see ASE notation]
-  colvar: "COLVAR"        # collective variables file associated with the trajectory (optional, used for monitoring CVs in chemiscope)
-  shuffle: False          # whether to shuffle the frames before processing (suggested true for MD data)
+  colvar: none            # collective variables file associated with the trajectory (optional, used for monitoring CVs in chemiscope)
+  shuffle: false          # whether to shuffle the frames before processing (suggested true for MD data)
   seed: 42
 
 deal:
   threshold: 0.1         #can be a single value or a list of values
   update_threshold: 0.08 # if not set it is chosen as 0.8 * threshold 
-  max_atoms_added: 0.15  # limit the number of selected environments added per configuration (can be int (number of atoms) or float (0,1) (fraction of total atoms). Default: -1 (no limit)
-  initial_atoms: 0.2     # use up to 20% of the atoms of each species for GP initialization
+  max_atoms_added: 0.2    # limit the number of selected environments added per configuration (can be int (number of atoms) float (0,1) (fraction of total atoms), or -1 (no limit)
+  initial_atoms: none     # specify which atoms to use for GP initialization (list, fraction or number. Default: none, 1 atom per species)
   output_prefix: deal    # prefix for output files (threshold will be appended as suffix)
   force_only: true
   train_hyps: false      # whether to re-train hyperparameters at each iteration (slower) 
-  verbose: true          # allowed values: true/false/"debug" (default: false)
+  verbose: true          # allowed values: true/false/"debug" (default: true)
   save_gp: false
 
 flare_calc:
@@ -153,6 +159,11 @@ flare_calc:
       cutoff_function: cosine
       radial_basis: chebyshev
   cutoff: 4.5
+  
+```
+One can also use a base config file and override via CLI the options:
+```bash
+deal -c input.yaml -t 0.15
 ```
 
 ### 🐍 Python Usage
